@@ -1,23 +1,22 @@
 <?php
 /**
- * POND FISH PROJECT DASHBOARD — ULTIMATE PROFESSIONAL EDITION v7.3
- * সম্পূর্ণ ওয়েবসাইট আপডেট - মোবাইল-ফ্রেন্ডলি অপটিমাইজেশন সহ
+ * POND FISH PROJECT DASHBOARD — COMPLETE WEBSITE UPDATE v7.4
+ * সম্পূর্ণ ওয়েবসাইট আপডেট - মোবাইল-ফ্রেন্ডলি + ৩০ শতাংশ পুকুরের ডেটা
  * 
- * বিশেষ বৈশিষ্ট্য:
+ * বৈশিষ্ট্য:
  * - সম্পূর্ণ মোবাইল-ফার্স্ট ডিজাইন
  * - থাম্ব-ফ্রেন্ডলি ইন্টারফেস
- * - PWA সাপোর্ট (অফলাইন কাজ করে)
+ * - PWA সাপোর্ট
  * - ডার্ক/লাইট মোড
- * - অ্যানিমেটেড ট্রানজিশন
- * - টাচ অপটিমাইজেশন
  * - ৩০ শতাংশ পুকুরের ডেটা ইন্টিগ্রেটেড
+ * - চার্ট, রিপোর্ট, অ্যানালিটিক্স
  */
 
 declare(strict_types=1);
 
 // ==================== কনফিগারেশন ====================
 const APP_NAME = 'পুকুর মাছ চাষ প্রকল্প';
-const APP_VERSION = '7.3.0';
+const APP_VERSION = '7.4.0';
 const DEFAULT_PIN = '3894';
 const SESSION_TIMEOUT = 7200;
 const DB_DIR = __DIR__ . DIRECTORY_SEPARATOR . 'data';
@@ -1174,10 +1173,6 @@ a{text-decoration:none;color:inherit}
 
 /* ==================== Pull-to-refresh prevention ==================== */
 body{overscroll-behavior-y:contain}
-
-/* ==================== Loading Skeleton ==================== */
-.skeleton{background:linear-gradient(90deg,var(--line) 25%,var(--bg) 50%,var(--line) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
-@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
 /* ==================== Responsive Breakpoints ==================== */
 @media(min-width:480px){
