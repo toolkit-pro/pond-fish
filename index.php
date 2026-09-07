@@ -1,26 +1,20 @@
 <?php
 /**
- * POND FISH PROJECT DASHBOARD — ULTIMATE PROFESSIONAL EDITION v7.0
- * সম্পূর্ণ আপডেটেড - সব আধুনিক ফিচার সহ
+ * POND FISH PROJECT DASHBOARD — ULTIMATE PROFESSIONAL EDITION v7.1
+ * সম্পূর্ণ আপডেটেড - আপনার ৩০ শতাংশ পুকুরের ডেটা সহ
  * 
- * নতুন ফিচার:
- * - Chart.js দিয়ে অ্যাডভান্সড গ্রাফ
- * - PDF রিপোর্ট জেনারেট
- * - CSV/Excel এক্সপোর্ট
- * - সার্চ ও ফিল্টার
- * - পেজিনেশন
- * - ডার্ক মোড
- * - মাল্টি-ইউজার সাপোর্ট
- * - PWA রেডি
- * - ইমেইল নোটিফিকেশন
- * - রিয়েল-টাইম আপডেট
+ * নতুন আপডেট:
+ * - ৫ম ব্যাচ যোগ করা হয়েছে (রুই - ৭ সেপ্টেম্বর ২০২৬)
+ * - খাদ্য রেসিপি আপডেট করা হয়েছে (৩.৫ কেজি/দিন)
+ * - দীর্ঘমেয়াদী লক্ষ্য যোগ করা হয়েছে
+ * - সম্পূর্ণ রিয়েল-টাইম ড্যাশবোর্ড
  */
 
 declare(strict_types=1);
 
 // ==================== কনফিগারেশন ====================
 const APP_NAME = 'পুকুর মাছ চাষ প্রকল্প';
-const APP_VERSION = '7.0.0';
+const APP_VERSION = '7.1.0';
 const DEFAULT_PIN = '3894';
 const SESSION_TIMEOUT = 7200;
 const DB_DIR = __DIR__ . DIRECTORY_SEPARATOR . 'data';
@@ -94,6 +88,7 @@ function install_schema(PDO $pdo): void {
             id INTEGER PRIMARY KEY CHECK (id = 1),
             project_name TEXT NOT NULL,
             pond_depth TEXT DEFAULT '',
+            pond_area TEXT DEFAULT '৩০ শতাংশ',
             total_current_weight REAL DEFAULT 0,
             notes TEXT DEFAULT '',
             last_midnight_update TEXT DEFAULT '',
@@ -101,6 +96,9 @@ function install_schema(PDO $pdo): void {
             dark_mode INTEGER DEFAULT 0,
             email_notifications INTEGER DEFAULT 0,
             notification_email TEXT DEFAULT '',
+            feed_daily_kg REAL DEFAULT 3.5,
+            feed_recipe TEXT DEFAULT '',
+            long_term_goal TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -119,6 +117,7 @@ function install_schema(PDO $pdo): void {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             batch_no INTEGER NOT NULL UNIQUE,
             fish_name TEXT NOT NULL,
+            fish_type TEXT DEFAULT '',
             release_date TEXT NOT NULL,
             initial_weight REAL NOT NULL DEFAULT 0,
             initial_count INTEGER NOT NULL DEFAULT 0,
@@ -128,6 +127,8 @@ function install_schema(PDO $pdo): void {
             death_count INTEGER NOT NULL DEFAULT 0,
             current_count INTEGER NOT NULL DEFAULT 0,
             current_weight REAL NOT NULL DEFAULT 0,
+            current_avg_weight REAL DEFAULT 0,
+            days_in_pond INTEGER DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'active',
             notes TEXT DEFAULT '',
             created_at TEXT NOT NULL,
@@ -159,6 +160,7 @@ function install_schema(PDO $pdo): void {
             batch_id INTEGER,
             feed_kg REAL NOT NULL DEFAULT 0,
             feed_cost REAL NOT NULL DEFAULT 0,
+            feed_type TEXT DEFAULT '',
             notes TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             FOREIGN KEY(batch_id) REFERENCES batches(id) ON DELETE SET NULL
@@ -203,15 +205,21 @@ function install_schema(PDO $pdo): void {
     $count = (int)$pdo->query("SELECT COUNT(*) FROM settings")->fetchColumn();
     if ($count === 0) {
         $now = date('Y-m-d H:i:s');
+        $feed_recipe = "শুকনো সরিষার খৈল: ১.৫ কেজি\nগমের ভুসি ও কুঁড়া: ১.০ কেজি\nনারিশ ২ মিলি পিলেট ফিড: ১.০ কেজি\nসাধারণ লবণ: এক চিমটি";
+        $long_term_goal = "২ মাস পর লক্ষ্য: ৬৫০টি দামি মাছ\nওপরের স্তর: কাতলা ২০০টি + লাটকাপ ৩০টি\nমধ্য স্তর: রুই ৩০০টি\nনিচের স্তর: কালবাউশ/মৃগেল ৫০টি + কার্পিও ১০টি\nবিশেষ স্তর: পাঙ্গাশ ১০০টি";
+        
         $stmt = $pdo->prepare("
             INSERT INTO settings
-            (id, project_name, pond_depth, total_current_weight, notes, last_midnight_update, 
-             market_price_per_kg, dark_mode, email_notifications, notification_email, created_at, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, project_name, pond_depth, pond_area, total_current_weight, notes, last_midnight_update, 
+             market_price_per_kg, dark_mode, email_notifications, notification_email, 
+             feed_daily_kg, feed_recipe, long_term_goal, created_at, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
-            APP_NAME, '১৮–১৯ ফুট', 75, '৩১ আগস্ট ২০২৬-এর ভিত্তি রেকর্ড',
-            date('Y-m-d'), 350, 0, 0, '', $now, $now
+            APP_NAME, '১৮–১৯ ফুট', '৩০ শতাংশ', 85, 
+            '৭ সেপ্টেম্বর ২০২৬-এর ভিত্তি রেকর্ড | মোট মাছ: ১,২৫০-১,৩৭০টি',
+            date('Y-m-d'), 200, 0, 0, '',
+            3.5, $feed_recipe, $long_term_goal, $now, $now
         ]);
     }
 
@@ -238,28 +246,90 @@ function install_schema(PDO $pdo): void {
 
 function seed_initial_data(PDO $pdo): void {
     $now = date('Y-m-d H:i:s');
+    
+    // আপনার ৩০ শতাংশ পুকুরের সম্পূর্ণ ডেটা
     $rows = [
-        [1, 'ছোট পোনা', '2026-07-08', 10, 1200, 1500, 3.25, 0, 920, 0, 15000, 'প্রাথমিক সংখ্যা ১,২০০–১,৫০০'],
-        [2, 'মাঝারি পোনা', '2026-07-22', 25, 280, 280, 0, 0, 280, 0, 12000, 'বর্তমান সংখ্যা ২৮০টি'],
-        [3, 'কাতল', '2026-08-24', 9, 64, 64, 0, 0, 64, 9, 3000, 'ছাড়ার সময় ৯ কেজি / ৬৪টি'],
-        [4, 'ব্রিগেড/লাটকাপ', '2026-08-31', 5.5, 56, 56, 0, 0, 56, 5.5, 2500, 'আজ নতুন অবমুক্ত'],
+        [
+            'batch_no' => 1,
+            'fish_name' => 'ছোট পোনা (সিলভার কার্প)',
+            'fish_type' => 'ওপরের স্তর',
+            'release_date' => '2026-07-08',
+            'initial_weight' => 10,
+            'initial_count' => 1700,
+            'current_count' => 920,
+            'current_weight' => 0,
+            'initial_cost' => 15000,
+            'notes' => 'কেজিতে ১৭০টি পোনা | ৬১ দিন (২ মাস) | বর্তমান গড় ওজন ২০-৩০ গ্রাম'
+        ],
+        [
+            'batch_no' => 2,
+            'fish_name' => 'মাঝারি পোনা',
+            'fish_type' => 'মধ্য স্তর',
+            'release_date' => '2026-07-22',
+            'initial_weight' => 25,
+            'initial_count' => 280,
+            'current_count' => 280,
+            'current_weight' => 0,
+            'initial_cost' => 12000,
+            'notes' => 'কেজিতে ১০-১১টি | ৪৭ দিন (১.৫ মাস) | বর্তমান গড় ওজন ১৫০-১৮০ গ্রাম'
+        ],
+        [
+            'batch_no' => 3,
+            'fish_name' => 'কাতল',
+            'fish_type' => 'ওপরের স্তর',
+            'release_date' => '2026-08-24',
+            'initial_weight' => 9,
+            'initial_count' => 64,
+            'current_count' => 64,
+            'current_weight' => 9,
+            'initial_cost' => 3000,
+            'notes' => 'গড় ১৪০ গ্রাম | ১৪ দিন (২ সপ্তাহ) | বর্তমান গড় ওজন ১৫০-১৬০ গ্রাম'
+        ],
+        [
+            'batch_no' => 4,
+            'fish_name' => 'ব্রিগেড/লাটকাপ',
+            'fish_type' => 'ওপরের স্তর',
+            'release_date' => '2026-08-31',
+            'initial_weight' => 5.5,
+            'initial_count' => 56,
+            'current_count' => 56,
+            'current_weight' => 5.5,
+            'initial_cost' => 2500,
+            'notes' => 'গড় ১০০ গ্রাম | ৭ দিন (১ সপ্তাহ) | বর্তমান গড় ওজন ১০০-১০৫ গ্রাম'
+        ],
+        [
+            'batch_no' => 5,
+            'fish_name' => 'রুই',
+            'fish_type' => 'মধ্য স্তর',
+            'release_date' => '2026-09-07',
+            'initial_weight' => 6,
+            'initial_count' => 70,
+            'current_count' => 70,
+            'current_weight' => 6,
+            'initial_cost' => 3500,
+            'notes' => 'গড় ৮৫ গ্রাম | আজকে নতুন ছাড়া হয়েছে | সুস্থ ও সবল'
+        ]
     ];
 
     $stmt = $pdo->prepare("
         INSERT INTO batches
-        (batch_no, fish_name, release_date, initial_weight, initial_count,
+        (batch_no, fish_name, fish_type, release_date, initial_weight, initial_count,
          current_count, death_weight, death_count, current_weight, initial_avg_weight,
          initial_cost, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 
     foreach ($rows as $r) {
-        [$no,$fish,$date,$iw,$minCount,$maxCount,$dw,$dc,$current,$cw,$cost,$notes] = $r;
-        $initialCount = $minCount;
-        $avg = $initialCount > 0 ? ($iw * 1000) / $initialCount : 0;
+        $avg = $r['initial_count'] > 0 ? ($r['initial_weight'] * 1000) / $r['initial_count'] : 0;
+        $death_count = $r['initial_count'] - $r['current_count'];
+        $death_weight = $death_count > 0 ? ($death_count * $avg / 1000) : 0;
+        
         $stmt->execute([
-            $no, $fish, $date, $iw, $initialCount, $current,
-            $dw, $dc, $cw, $avg, $cost, $notes, $now, $now
+            $r['batch_no'], $r['fish_name'], $r['fish_type'], $r['release_date'],
+            $r['initial_weight'], $r['initial_count'],
+            $r['current_count'], $death_weight, $death_count,
+            $r['current_weight'], $avg,
+            $r['initial_cost'], $r['notes'], $now, $now
         ]);
     }
 }
@@ -319,7 +389,6 @@ function run_cron(): void {
     $today = date('Y-m-d');
     $settings = $pdo->query("SELECT last_midnight_update, email_notifications, notification_email FROM settings WHERE id=1")->fetch();
     
-    // মিডনাইট আপডেট
     if (($settings['last_midnight_update'] ?? '') !== $today) {
         $pdo->prepare("UPDATE settings SET last_midnight_update = ?, updated_at = ? WHERE id = 1")
             ->execute([$today, date('Y-m-d H:i:s')]);
@@ -339,14 +408,12 @@ function run_cron(): void {
         }
         audit('midnight_update', 'system', null, "Auto-update completed for $today");
         
-        // ইমেইল নোটিফিকেশন
         if (!empty($settings['email_notifications']) && !empty($settings['notification_email'])) {
             send_daily_report($settings['notification_email']);
         }
     }
     
-    // ব্যাকআপ (সাপ্তাহিক)
-    if (date('N') == 7) { // রোববার
+    if (date('N') == 7) {
         create_backup();
     }
 }
@@ -404,7 +471,6 @@ function create_backup(): void {
     $backup_file = $backup_dir . '/backup_' . date('Y-m-d_H-i-s') . '.sqlite';
     copy(DB_FILE, $backup_file);
     
-    // ৩০ দিনের বেশি পুরনো ব্যাকআপ ডিলিট
     $files = glob($backup_dir . '/*.sqlite');
     foreach ($files as $file) {
         if (filemtime($file) < time() - 30 * 86400) {
@@ -423,17 +489,20 @@ function send_daily_report(string $email): void {
     $totalCount = array_sum(array_column($batches, 'current_count'));
     
     $subject = "পুকুর মাছ চাষ প্রকল্প - দৈনিক রিপোর্ট ($today)";
-    $message = "প্রকল্প: " . APP_NAME . "\n";
-    $message .= "তারিখ: $today\n";
-    $message .= "মোট ব্যাচ: " . count($batches) . "\n";
+    $message = "🏡 পুকুরের তথ্য:\n";
+    $message .= "আয়তন: ৩০ শতাংশ | গভীরতা: ১৮-১৯ ফুট\n\n";
+    $message .= "📊 সারাংশ:\n";
+    $message .= "মোট ব্যাচ: " . count($batches) . " টি\n";
     $message .= "মোট মাছ: $totalCount টি\n";
-    $message .= "মোট ওজন: " . number_format($totalWeight, 2) . " কেজি\n";
-    $message .= "\n--- বিস্তারিত ---\n";
+    $message .= "মোট ওজন: " . number_format($totalWeight, 2) . " কেজি\n\n";
+    $message .= "📋 ব্যাচভিত্তিক:\n";
     foreach ($batches as $b) {
         $message .= "ব্যাচ {$b['batch_no']}: {$b['fish_name']} - " . 
                     number_format($b['current_weight'], 2) . " কেজি, " . 
                     $b['current_count'] . " টি\n";
     }
+    $message .= "\n🍚 দৈনিক খাদ্য: ৩.৫ কেজি\n";
+    $message .= "📅 পরবর্তী আপডেট: আজ রাত ১২:০০ টায়\n";
     
     $headers = "From: " . APP_NAME . " <noreply@" . $_SERVER['HTTP_HOST'] . ">\r\n";
     $headers .= "Content-Type: text/plain; charset=utf-8\r\n";
@@ -480,14 +549,14 @@ if (isset($_GET['logout'])) {
     redirect('?page=login');
 }
 
-// ==================== এক্সপোর্ট হ্যান্ডলার ====================
+// ==================== এক্সপোর্ট ====================
 if (isset($_GET['export'])) {
     require_login();
     $table = $_GET['export'];
     $columns = [
-        'batches' => ['batch_no', 'fish_name', 'release_date', 'initial_weight', 'initial_count', 
-                      'current_count', 'current_weight', 'status', 'notes'],
-        'feed_logs' => ['log_date', 'feed_kg', 'feed_cost', 'notes'],
+        'batches' => ['batch_no', 'fish_name', 'fish_type', 'release_date', 'initial_weight', 'initial_count', 
+                      'current_count', 'current_weight', 'current_avg_weight', 'days_in_pond', 'status', 'notes'],
+        'feed_logs' => ['log_date', 'feed_kg', 'feed_cost', 'feed_type', 'notes'],
         'health_logs' => ['log_date', 'log_type', 'amount', 'unit', 'cost', 'details'],
         'expense_logs' => ['expense_date', 'expense_type', 'amount', 'notes'],
         'growth_snapshots' => ['snapshot_date', 'live_count', 'live_weight', 'avg_weight', 
@@ -547,7 +616,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo = db();
 
-        // ডার্ক মোড টগল
         if ($action === 'toggle_dark_mode') {
             $current = (int)$pdo->query("SELECT dark_mode FROM settings WHERE id=1")->fetchColumn();
             $pdo->prepare("UPDATE settings SET dark_mode = ?, updated_at = ? WHERE id=1")
@@ -555,32 +623,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('?page=dashboard&dark=' . ($current ? 0 : 1));
         }
 
-        // সেটিংস
         if ($action === 'save_settings') {
             $stmt = $pdo->prepare("
-                UPDATE settings SET project_name=?, pond_depth=?, total_current_weight=?, 
-                notes=?, market_price_per_kg=?, email_notifications=?, notification_email=?, updated_at=?
+                UPDATE settings SET 
+                project_name=?, pond_depth=?, pond_area=?, total_current_weight=?, 
+                notes=?, market_price_per_kg=?, email_notifications=?, notification_email=?,
+                feed_daily_kg=?, feed_recipe=?, long_term_goal=?, updated_at=?
                 WHERE id=1
             ");
             $stmt->execute([
                 trim($_POST['project_name']),
                 trim($_POST['pond_depth']),
+                trim($_POST['pond_area']),
                 normalize_float($_POST['total_current_weight']),
                 trim($_POST['notes']),
                 normalize_float($_POST['market_price_per_kg']),
                 isset($_POST['email_notifications']) ? 1 : 0,
                 trim($_POST['notification_email']),
+                normalize_float($_POST['feed_daily_kg']),
+                trim($_POST['feed_recipe']),
+                trim($_POST['long_term_goal']),
                 date('Y-m-d H:i:s')
             ]);
             audit('update', 'settings', 1);
             redirect('?page=settings&saved=1');
         }
 
-        // ব্যাচ সেভ
         if ($action === 'save_batch') {
             $id = normalize_int($_POST['id'] ?? 0);
             $batchNo = normalize_int($_POST['batch_no']);
             $fishName = trim($_POST['fish_name']);
+            $fishType = trim($_POST['fish_type']);
             $releaseDate = trim($_POST['release_date']);
             
             if ($batchNo < 1 || $fishName === '' || $releaseDate === '') {
@@ -588,7 +661,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $data = [
-                $batchNo, $fishName, $releaseDate,
+                $batchNo, $fishName, $fishType, $releaseDate,
                 normalize_float($_POST['initial_weight']),
                 normalize_int($_POST['initial_count']),
                 normalize_float($_POST['initial_cost']),
@@ -599,32 +672,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 trim($_POST['notes'])
             ];
 
-            $avg = $data[4] > 0 ? ($data[3] * 1000) / $data[4] : 0;
+            $avg = $data[5] > 0 ? ($data[4] * 1000) / $data[5] : 0;
+            $days = days_between($releaseDate, date('Y-m-d'));
 
             if ($id > 0) {
                 $stmt = $pdo->prepare("
-                    UPDATE batches SET batch_no=?, fish_name=?, release_date=?, initial_weight=?,
-                    initial_count=?, initial_avg_weight=?, initial_cost=?, death_weight=?,
-                    death_count=?, current_count=?, current_weight=?, notes=?, updated_at=?
+                    UPDATE batches SET 
+                    batch_no=?, fish_name=?, fish_type=?, release_date=?, 
+                    initial_weight=?, initial_count=?, initial_cost=?, 
+                    death_weight=?, death_count=?, current_count=?, 
+                    current_weight=?, current_avg_weight=?, days_in_pond=?, notes=?, updated_at=?
                     WHERE id=?
                 ");
-                $stmt->execute([...$data, $avg, date('Y-m-d H:i:s'), $id]);
+                $stmt->execute([...$data, $avg, $days, date('Y-m-d H:i:s'), $id]);
                 audit('update', 'batch', $id);
             } else {
                 $stmt = $pdo->prepare("
                     INSERT INTO batches
-                    (batch_no, fish_name, release_date, initial_weight, initial_count,
+                    (batch_no, fish_name, fish_type, release_date, initial_weight, initial_count,
                      initial_avg_weight, initial_cost, death_weight, death_count,
-                     current_count, current_weight, notes, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     current_count, current_weight, current_avg_weight, days_in_pond,
+                     notes, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt->execute([...$data, $avg, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
+                $stmt->execute([
+                    $data[0], $data[1], $data[2], $data[3], $data[4], $data[5],
+                    $avg, $data[6], $data[7], $data[8], $data[9], $data[10],
+                    $avg, $days, $data[11], date('Y-m-d H:i:s'), date('Y-m-d H:i:s')
+                ]);
                 audit('create', 'batch', (int)$pdo->lastInsertId());
             }
             redirect('?page=batches&saved=1');
         }
 
-        // ডিলিট
         $delete_actions = ['delete_batch', 'delete_feed', 'delete_health', 'delete_expense', 'delete_snapshot'];
         if (in_array($action, $delete_actions)) {
             $id = normalize_int($_POST['id']);
@@ -634,10 +714,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                          'snapshot' => 'growth_snapshots'];
             $pdo->prepare("DELETE FROM " . $table_map[$table] . " WHERE id=?")->execute([$id]);
             audit('delete', $table, $id);
-            redirect('?page=' . $table_map[$table] . '&deleted=1');
+            redirect('?page=' . $table . 's&deleted=1');
         }
 
-        // Snapshot
         if ($action === 'snapshot') {
             create_snapshot(
                 normalize_int($_POST['batch_id']),
@@ -650,16 +729,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('?page=growth&saved=1');
         }
 
-        // খাদ্য
         if ($action === 'feed') {
             $pdo->prepare("
-                INSERT INTO feed_logs(log_date, batch_id, feed_kg, feed_cost, notes, created_at)
-                VALUES(?,?,?,?,?,?)
+                INSERT INTO feed_logs(log_date, batch_id, feed_kg, feed_cost, feed_type, notes, created_at)
+                VALUES(?,?,?,?,?,?,?)
             ")->execute([
                 $_POST['log_date'],
                 normalize_int($_POST['batch_id']) ?: null,
                 normalize_float($_POST['feed_kg']),
                 normalize_float($_POST['feed_cost']),
+                trim($_POST['feed_type']),
                 trim($_POST['notes']),
                 date('Y-m-d H:i:s')
             ]);
@@ -667,7 +746,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('?page=feed&saved=1');
         }
 
-        // স্বাস্থ্য
         if ($action === 'health') {
             $pdo->prepare("
                 INSERT INTO health_logs(log_date, batch_id, log_type, amount, unit, cost, details, created_at)
@@ -686,7 +764,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('?page=health&saved=1');
         }
 
-        // খরচ
         if ($action === 'expense') {
             $pdo->prepare("
                 INSERT INTO expense_logs(expense_date, batch_id, expense_type, amount, notes, created_at)
@@ -703,7 +780,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('?page=expenses&saved=1');
         }
 
-        // ইউজার তৈরি (শুধু অ্যাডমিন)
         if ($action === 'create_user' && is_admin()) {
             $username = trim($_POST['username']);
             $password = $_POST['password'];
@@ -726,7 +802,6 @@ $pdo = db();
 $settings = $pdo->query("SELECT * FROM settings WHERE id=1")->fetch();
 $dark_mode = (int)($settings['dark_mode'] ?? 0);
 
-// ডার্ক মোড কুকি/সেশন
 if (isset($_GET['dark'])) {
     $_SESSION['dark_mode'] = (int)$_GET['dark'];
     $dark_mode = (int)$_GET['dark'];
@@ -743,7 +818,8 @@ $date_to = $_GET['date_to'] ?? '';
 $batch_query = "SELECT * FROM batches WHERE 1=1";
 $params = [];
 if ($search) {
-    $batch_query .= " AND (fish_name LIKE ? OR batch_no LIKE ?)";
+    $batch_query .= " AND (fish_name LIKE ? OR batch_no LIKE ? OR fish_type LIKE ?)";
+    $params[] = "%$search%";
     $params[] = "%$search%";
     $params[] = "%$search%";
 }
@@ -765,6 +841,13 @@ $batches = $pdo->prepare($batch_query);
 $batches->execute($params);
 $batches = $batches->fetchAll();
 
+// ক্যালকুলেশন আপডেট
+foreach ($batches as &$b) {
+    $b['current_avg_weight'] = $b['current_count'] > 0 ? ($b['current_weight'] * 1000) / $b['current_count'] : 0;
+    $b['days_in_pond'] = days_between($b['release_date'], date('Y-m-d'));
+}
+unset($b);
+
 // পেজিনেশন
 $page_num = max(1, (int)($_GET['p'] ?? 1));
 $total_items = count($batches);
@@ -772,7 +855,7 @@ $total_pages = ceil($total_items / ITEMS_PER_PAGE);
 $offset = ($page_num - 1) * ITEMS_PER_PAGE;
 $batches_paged = array_slice($batches, $offset, ITEMS_PER_PAGE);
 
-// অন্যান্য ডেটা
+// সারাংশ ডেটা
 $totalCount = array_sum(array_column($batches, 'current_count'));
 $totalInitialWeight = array_sum(array_column($batches, 'initial_weight'));
 $totalCurrentWeight = array_sum(array_column($batches, 'current_weight'));
@@ -792,9 +875,6 @@ $estimatedMarketValue = $dashboardCurrentWeight * $marketPricePerKg;
 $estimatedProfit = $estimatedMarketValue - $totalAllExpenses;
 $profitPercent = $totalAllExpenses > 0 ? ($estimatedProfit / $totalAllExpenses) * 100 : 0;
 
-// ইউজার ডেটা
-$users = $pdo->query("SELECT id, username, role, email, created_at FROM users ORDER BY id")->fetchAll();
-
 // অন্যান্য ডেটা
 $editBatch = null;
 if (isset($_GET['edit']) && $_GET['edit'] !== 'new') {
@@ -804,7 +884,7 @@ if (isset($_GET['edit']) && $_GET['edit'] !== 'new') {
 }
 
 $snapshots = $pdo->query("
-    SELECT gs.*, b.batch_no, b.fish_name
+    SELECT gs.*, b.batch_no, b.fish_name, b.fish_type
     FROM growth_snapshots gs
     JOIN batches b ON b.id=gs.batch_id
     ORDER BY gs.snapshot_date DESC, b.batch_no ASC
@@ -835,17 +915,20 @@ $expenseLogs = $pdo->query("
     LIMIT 50
 ")->fetchAll();
 
+$users = $pdo->query("SELECT id, username, role, email, created_at FROM users ORDER BY id")->fetchAll();
+
 // Chart ডেটা
 $chart_data = [
     'labels' => [],
     'weights' => [],
     'counts' => [],
-    'dates' => []
+    'types' => []
 ];
 foreach ($batches as $b) {
     $chart_data['labels'][] = 'B' . $b['batch_no'] . ' - ' . $b['fish_name'];
     $chart_data['weights'][] = (float)$b['current_weight'];
     $chart_data['counts'][] = (int)$b['current_count'];
+    $chart_data['types'][] = $b['fish_type'] ?: 'স্তর নির্ধারিত নয়';
 }
 
 // ==================== রেন্ডার লগইন ====================
@@ -924,38 +1007,39 @@ function render_login(string $error = ''): void {
 
 *{box-sizing:border-box}html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans Bengali',system-ui,sans-serif;transition:background 0.3s,color 0.3s}.wrap{width:min(1400px,95%);margin:auto}
 
-/* নেভিগেশন */
 .top-nav{position:sticky;top:0;z-index:100;background:var(--card);backdrop-filter:blur(20px);border-bottom:1px solid var(--line)}.nav-inner{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:10px 0}.brand{font-weight:800;font-size:20px;color:var(--primary);display:flex;align-items:center;gap:10px}.brand-icon{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;display:grid;place-items:center;font-size:20px}.nav-links{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.nav-links a{padding:9px 14px;border-radius:10px;text-decoration:none;color:var(--muted);font-weight:600;font-size:14px;transition:all 0.2s}.nav-links a:hover{background:var(--line);color:var(--primary)}.nav-links a.active{background:var(--primary);color:#fff}.btn-logout{background:#fee2e2;color:#991b1b;border:0;padding:9px 14px;border-radius:10px;font-weight:600;cursor:pointer;transition:all 0.2s;font-size:14px}.btn-logout:hover{background:#fecaca}
 
-/* কার্ড */
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px;transition:all 0.3s}.card:hover{box-shadow:var(--shadow-lg)}
 
-/* কেপিআই */
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:20px 0}.kpi-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;transition:all 0.3s;cursor:pointer}.kpi-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}.kpi-value{font-size:28px;font-weight:800}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:20px 0}.kpi-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;transition:all 0.3s;cursor:pointer}.kpi-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}.kpi-value{font-size:28px;font-weight:800}.kpi-label{font-size:13px;color:var(--muted);font-weight:600}
 
-/* বাটন */
-.btn{display:inline-flex;align-items:center;gap:8px;border:0;background:var(--primary);color:#fff;padding:11px 18px;border-radius:12px;font-weight:700;text-decoration:none;cursor:pointer;transition:all 0.2s;font-size:14px}.btn:hover{background:var(--primary2);transform:translateY(-1px)}.btn-danger{background:var(--danger)}.btn-success{background:var(--success)}.btn-info{background:var(--info)}.btn-warning{background:var(--warning)}.btn-sm{padding:6px 12px;font-size:12px}.btn-xs{padding:4px 8px;font-size:11px}
+.btn{display:inline-flex;align-items:center;gap:8px;border:0;background:var(--primary);color:#fff;padding:11px 18px;border-radius:12px;font-weight:700;text-decoration:none;cursor:pointer;transition:all 0.2s;font-size:14px}.btn:hover{background:var(--primary2);transform:translateY(-1px)}.btn-danger{background:var(--danger)}.btn-success{background:var(--success)}.btn-info{background:var(--info)}.btn-warning{background:var(--warning)}.btn-sm{padding:6px 12px;font-size:12px}.btn-xs{padding:4px 8px;font-size:11px}.btn-outline{background:transparent;border:2px solid var(--line);color:var(--ink)}.btn-outline:hover{background:var(--line)}
 
-/* টেবিল */
-.table-wrap{overflow-x:auto;border-radius:16px;border:1px solid var(--line);background:var(--card)}.table{width:100%;border-collapse:collapse;min-width:700px}.table th,.table td{text-align:left;padding:14px 16px;border-bottom:1px solid var(--line)}.table th{background:var(--bg);font-weight:700;font-size:12px;text-transform:uppercase;color:var(--muted);position:sticky;top:0}.badge{display:inline-block;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700}.badge-green{background:#ecfdf5;color:#059669}.badge-red{background:#fef2f2;color:#dc2626}.badge-blue{background:#eff6ff;color:#2563eb}
+.table-wrap{overflow-x:auto;border-radius:16px;border:1px solid var(--line);background:var(--card)}.table{width:100%;border-collapse:collapse;min-width:700px}.table th,.table td{text-align:left;padding:14px 16px;border-bottom:1px solid var(--line)}.table th{background:var(--bg);font-weight:700;font-size:12px;text-transform:uppercase;color:var(--muted);position:sticky;top:0}.badge{display:inline-block;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700}.badge-green{background:#ecfdf5;color:#059669}.badge-red{background:#fef2f2;color:#dc2626}.badge-blue{background:#eff6ff;color:#2563eb}.badge-yellow{background:#fef3c7;color:#d97706}.badge-purple{background:#f3e8ff;color:#7c3aed}
 
-/* ফর্ম */
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px;color:var(--muted)}.field input,.field select,.field textarea{width:100%;padding:11px 14px;border:2px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;transition:border-color 0.3s}.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--primary)}.field textarea{min-height:100px;resize:vertical}
 
-/* গ্রাফ */
 .chart-container{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin:20px 0}.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 
-/* সার্চ */
 .search-bar{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}.search-bar input,.search-bar select{padding:10px 14px;border:2px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit}
 
-/* পেজিনেশন */
 .pagination{display:flex;gap:6px;justify-content:center;margin:20px 0}.pagination a,.pagination span{padding:8px 14px;border-radius:8px;border:1px solid var(--line);text-decoration:none;color:var(--ink)}.pagination .active{background:var(--primary);color:#fff;border-color:var(--primary)}.pagination a:hover{background:var(--line)}
 
-/* মোবাইল */
 .mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);z-index:1000;padding:8px 0}.mobile-nav-inner{display:flex;justify-content:space-around;overflow-x:auto}.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:var(--muted);font-size:10px;font-weight:600;padding:4px 8px;min-width:50px}.mobile-nav-item.active{color:var(--primary)}.mobile-nav-item .nav-icon{font-size:20px}
 
-/* রেস্পন্সিভ */
-@media(max-width:768px){.nav-links{display:none}.mobile-nav{display:block}.kpi-grid{grid-template-columns:1fr 1fr}.chart-grid{grid-template-columns:1fr}.kpi-value{font-size:22px}.two-col{grid-template-columns:1fr}.search-bar{flex-direction:column}}
+.notice{padding:14px 18px;border-radius:12px;background:#ecfdf5;color:#065f46;margin:16px 0;font-weight:600;border-left:4px solid #10b981}.notice-error{background:#fef2f2;color:#991b1b;border-left-color:#ef4444}
+
+.pond-info{background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;border-radius:16px;padding:20px;margin:20px 0}
+.pond-info h3{color:#fff;margin-bottom:10px}
+.pond-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.pond-info-item{background:rgba(255,255,255,0.1);border-radius:12px;padding:12px;text-align:center}
+.pond-info-item .label{font-size:11px;opacity:0.8}
+.pond-info-item .value{font-size:18px;font-weight:700}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.three-col{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+
+@media(max-width:768px){.nav-links{display:none}.mobile-nav{display:block}.kpi-grid{grid-template-columns:1fr 1fr}.chart-grid{grid-template-columns:1fr}.kpi-value{font-size:22px}.two-col,.three-col{grid-template-columns:1fr}.search-bar{flex-direction:column}}
 @media(max-width:480px){.kpi-grid{grid-template-columns:1fr}}
 </style>
 </head>
@@ -992,12 +1076,8 @@ function render_login(string $error = ''): void {
 <div class="notice">🗑️ তথ্য মুছে ফেলা হয়েছে।</div>
 <?php endif; ?>
 <?php if (!empty($formError)): ?>
-<div class="notice" style="background:#fef2f2;color:#991b1b">⚠ <?= e($formError) ?></div>
+<div class="notice notice-error">⚠ <?= e($formError) ?></div>
 <?php endif; ?>
-
-<style>
-.notice{padding:14px 18px;border-radius:12px;background:#ecfdf5;color:#065f46;margin:16px 0;font-weight:600}
-</style>
 
 <?php
 // ==================== ড্যাশবোর্ড ====================
@@ -1005,78 +1085,130 @@ if ($page === 'dashboard'):
 ?>
 <section style="padding:20px 0">
     <h1 style="font-size:clamp(24px,4vw,38px);margin:0 0 8px">📊 প্রকল্প পরিসংখ্যান ড্যাশবোর্ড</h1>
-    <p style="color:var(--muted)">সর্বশেষ ভিত্তি: ৩১ আগস্ট ২০২৬ · প্রতি রাত ১২:০০ টায় লাইভ আপডেট</p>
+    <p style="color:var(--muted)">📅 সর্বশেষ আপডেট: <?= date('d M Y, h:i A') ?> | ৩০ শতাংশ পুকুর</p>
 </section>
+
+<!-- পুকুরের তথ্য -->
+<div class="pond-info">
+    <h3>🏡 পুকুরের বর্তমান অবস্থা</h3>
+    <div class="pond-info-grid">
+        <div class="pond-info-item">
+            <div class="label">আয়তন</div>
+            <div class="value"><?= e($settings['pond_area'] ?: '৩০ শতাংশ') ?></div>
+        </div>
+        <div class="pond-info-item">
+            <div class="label">পানির গভীরতা</div>
+            <div class="value"><?= e($settings['pond_depth']) ?></div>
+        </div>
+        <div class="pond-info-item">
+            <div class="label">মোট মাছ</div>
+            <div class="value"><?= number_format($totalCount) ?> টি</div>
+        </div>
+        <div class="pond-info-item">
+            <div class="label">মোট ওজন</div>
+            <div class="value"><?= number_format($dashboardCurrentWeight, 1) ?> কেজি</div>
+        </div>
+        <div class="pond-info-item">
+            <div class="label">দৈনিক খাদ্য</div>
+            <div class="value"><?= number_format((float)$settings['feed_daily_kg'], 1) ?> কেজি</div>
+        </div>
+        <div class="pond-info-item">
+            <div class="label">মোট ব্যাচ</div>
+            <div class="value"><?= count($batches) ?> টি</div>
+        </div>
+    </div>
+</div>
 
 <section class="kpi-grid">
     <div class="kpi-card" onclick="location='?page=batches'">
         <div class="kpi-label">🐟 বর্তমানে জীবিত মাছ</div>
         <div class="kpi-value"><?= number_format($totalCount) ?> টি</div>
+        <small style="color:var(--muted)"><?= count($batches) ?> টি ব্যাচ</small>
     </div>
     <div class="kpi-card" onclick="location='?page=accounting'">
         <div class="kpi-label">⚖️ বর্তমান ওজন</div>
-        <div class="kpi-value"><?= number_format($dashboardCurrentWeight,2) ?> কেজি</div>
+        <div class="kpi-value"><?= number_format($dashboardCurrentWeight, 1) ?> কেজি</div>
+        <small style="color:var(--muted)">+<?= number_format($overallGain, 1) ?> কেজি বৃদ্ধি</small>
     </div>
     <div class="kpi-card" onclick="location='?page=accounting'">
         <div class="kpi-label">💰 আনুমানিক বাজার মূল্য</div>
-        <div class="kpi-value">৳<?= number_format($estimatedMarketValue,0) ?></div>
+        <div class="kpi-value">৳<?= number_format($estimatedMarketValue, 0) ?></div>
+        <small style="color:var(--muted)">@ ৳<?= number_format($marketPricePerKg, 0) ?>/কেজি</small>
     </div>
     <div class="kpi-card" onclick="location='?page=accounting'">
         <div class="kpi-label">📊 লাভ/ক্ষতি</div>
-        <div class="kpi-value" style="color:<?= $estimatedProfit >= 0 ? '#10b981' : '#ef4444' ?>">৳<?= number_format($estimatedProfit,0) ?></div>
+        <div class="kpi-value" style="color:<?= $estimatedProfit >= 0 ? '#10b981' : '#ef4444' ?>">৳<?= number_format($estimatedProfit, 0) ?></div>
+        <small style="color:var(--muted)"><?= number_format($profitPercent, 1) ?>%</small>
     </div>
 </section>
 
 <div class="chart-grid">
     <div class="chart-container">
-        <h3>📊 ব্যাচভিত্তিক ওজন</h3>
+        <h3>📊 ব্যাচভিত্তিক ওজন ও সংখ্যা</h3>
         <canvas id="weightChart"></canvas>
     </div>
     <div class="chart-container">
-        <h3>🧮 ব্যাচভিত্তিক সংখ্যা</h3>
-        <canvas id="countChart"></canvas>
+        <h3>🧮 স্তরভিত্তিক মাছ বিতরণ</h3>
+        <canvas id="typeChart"></canvas>
     </div>
 </div>
 
 <div class="card">
-    <h3>📈 গ্রোথ ট্রেন্ড</h3>
+    <h3>📈 গ্রোথ ট্রেন্ড (ব্যাচভিত্তিক)</h3>
     <canvas id="growthChart" height="100"></canvas>
 </div>
 
 <script>
+// ওজন ও সংখ্যা চার্ট
 new Chart(document.getElementById('weightChart'), {
     type: 'bar',
     data: {
         labels: <?= json_encode($chart_data['labels']) ?>,
-        datasets: [{
-            label: 'ওজন (কেজি)',
-            data: <?= json_encode($chart_data['weights']) ?>,
-            backgroundColor: 'rgba(15, 118, 110, 0.6)',
-            borderColor: '#0f766e',
-            borderWidth: 2
-        }]
+        datasets: [
+            {
+                label: 'ওজন (কেজি)',
+                data: <?= json_encode($chart_data['weights']) ?>,
+                backgroundColor: 'rgba(15, 118, 110, 0.6)',
+                borderColor: '#0f766e',
+                borderWidth: 2,
+                order: 1
+            },
+            {
+                label: 'সংখ্যা',
+                data: <?= json_encode($chart_data['counts']) ?>,
+                backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                borderColor: '#3b82f6',
+                borderWidth: 2,
+                order: 0
+            }
+        ]
     },
     options: {
         responsive: true,
-        plugins: { legend: { display: true } }
+        plugins: { legend: { display: true, position: 'top' } },
+        scales: { y: { beginAtZero: true } }
     }
 });
 
-new Chart(document.getElementById('countChart'), {
-    type: 'bar',
+// স্তরভিত্তিক বিতরণ
+const typeCounts = {};
+<?php foreach ($batches as $b): ?>
+const type = '<?= e($b['fish_type'] ?: 'অনির্ধারিত') ?>';
+typeCounts[type] = (typeCounts[type] || 0) + <?= (int)$b['current_count'] ?>;
+<?php endforeach; ?>
+
+new Chart(document.getElementById('typeChart'), {
+    type: 'doughnut',
     data: {
-        labels: <?= json_encode($chart_data['labels']) ?>,
+        labels: Object.keys(typeCounts),
         datasets: [{
-            label: 'সংখ্যা',
-            data: <?= json_encode($chart_data['counts']) ?>,
-            backgroundColor: 'rgba(59, 130, 246, 0.6)',
-            borderColor: '#3b82f6',
-            borderWidth: 2
+            data: Object.values(typeCounts),
+            backgroundColor: ['#0f766e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#10b981']
         }]
     },
     options: {
         responsive: true,
-        plugins: { legend: { display: true } }
+        plugins: { legend: { position: 'bottom' } }
     }
 });
 
@@ -1085,7 +1217,7 @@ $growth_data = [];
 foreach ($batches as $b) {
     $snap = latest_snapshot((int)$b['id']);
     if ($snap) {
-        $growth_data['labels'][] = 'B' . $b['batch_no'] . ' - ' . $b['fish_name'];
+        $growth_data['labels'][] = 'B' . $b['batch_no'];
         $growth_data['growth'][] = (float)$snap['growth_percent'];
         $growth_data['survival'][] = (float)$snap['survival_percent'];
     }
@@ -1100,23 +1232,44 @@ new Chart(document.getElementById('growthChart'), {
                 label: 'গ্রোথ %',
                 data: <?= json_encode($growth_data['growth']) ?>,
                 borderColor: '#10b981',
-                tension: 0.3
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                tension: 0.3,
+                fill: true
             },
             {
                 label: 'সারভাইভাল %',
                 data: <?= json_encode($growth_data['survival']) ?>,
                 borderColor: '#3b82f6',
-                tension: 0.3
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.3,
+                fill: true
             }
         ]
     },
     options: {
         responsive: true,
-        plugins: { legend: { position: 'top' } }
+        plugins: { legend: { position: 'top' } },
+        scales: { y: { beginAtZero: true, max: 100 } }
     }
 });
 <?php endif; ?>
 </script>
+
+<!-- দীর্ঘমেয়াদী লক্ষ্য -->
+<div class="card" style="background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff">
+    <h3 style="color:#fff">🎯 আগামী ২ মাসের দীর্ঘমেয়াদী লক্ষ্য</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:10px">
+        <div>
+            <p><strong>ওপরের স্তর:</strong> কাতলা ২০০টি + লাটকাপ ৩০টি</p>
+            <p><strong>মধ্য স্তর:</strong> রুই ৩০০টি</p>
+        </div>
+        <div>
+            <p><strong>নিচের স্তর:</strong> কালবাউশ/মৃগেল ৫০টি + কার্পিও ১০টি</p>
+            <p><strong>বিশেষ স্তর:</strong> পাঙ্গাশ ১০০টি</p>
+        </div>
+    </div>
+    <p style="margin-top:10px;opacity:0.7;font-size:14px">🎯 লক্ষ্যমাত্রা: ৬৫০টি দামি মাছ | অতিরিক্ত মাছ বিক্রি করা হবে</p>
+</div>
 <?php endif; ?>
 
 <?php
@@ -1139,25 +1292,27 @@ if ($page === 'batches'):
             <option value="active" <?= $batch_filter === 'active' ? 'selected' : '' ?>>সক্রিয়</option>
             <option value="inactive" <?= $batch_filter === 'inactive' ? 'selected' : '' ?>>নিষ্ক্রিয়</option>
         </select>
-        <input type="date" id="dateFrom" value="<?= e($date_from) ?>" onchange="filterBatches()">
-        <input type="date" id="dateTo" value="<?= e($date_to) ?>" onchange="filterBatches()">
+        <input type="date" id="dateFrom" value="<?= e($date_from) ?>" onchange="filterBatches()" placeholder="তারিখ থেকে">
+        <input type="date" id="dateTo" value="<?= e($date_to) ?>" onchange="filterBatches()" placeholder="তারিখ পর্যন্ত">
     </div>
 
     <div class="table-wrap">
         <table class="table">
             <thead><tr>
-                <th>ব্যাচ</th><th>মাছ</th><th>ছাড়ার তারিখ</th><th>প্রাথমিক</th><th>বর্তমান</th>
-                <th>Live Weight</th><th>স্ট্যাটাস</th><th>কাজ</th>
+                <th>ব্যাচ</th><th>মাছ</th><th>স্তর</th><th>ছাড়ার তারিখ</th><th>দিন</th>
+                <th>সংখ্যা</th><th>ওজন</th><th>গড় ওজন</th><th>স্ট্যাটাস</th><th>কাজ</th>
             </tr></thead>
             <tbody>
             <?php foreach ($batches_paged as $b): ?>
             <tr>
                 <td><span class="badge badge-blue">B<?= (int)$b['batch_no'] ?></span></td>
                 <td><strong><?= e($b['fish_name']) ?></strong></td>
+                <td><span class="badge badge-purple"><?= e($b['fish_type'] ?: 'নির্ধারিত নয়') ?></span></td>
                 <td><?= e($b['release_date']) ?></td>
-                <td><?= number_format((int)$b['initial_count']) ?> টি</td>
-                <td><?= number_format((int)$b['current_count']) ?> টি</td>
-                <td><?= number_format((float)$b['current_weight'],2) ?> kg</td>
+                <td><?= (int)$b['days_in_pond'] ?> দিন</td>
+                <td><?= number_format((int)$b['current_count']) ?></td>
+                <td><?= number_format((float)$b['current_weight'], 1) ?> kg</td>
+                <td><?= number_format((float)$b['current_avg_weight'], 0) ?> g</td>
                 <td><span class="badge <?= $b['status'] === 'active' ? 'badge-green' : 'badge-red' ?>"><?= $b['status'] === 'active' ? '✅ সক্রিয়' : '❌ বন্ধ' ?></span></td>
                 <td>
                     <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -1172,7 +1327,7 @@ if ($page === 'batches'):
                 </td>
             </tr>
             <?php endforeach; ?>
-            <?php if (!$batches_paged): ?><tr><td colspan="8" style="text-align:center;padding:40px;color:var(--muted)">কোন ব্যাচ নেই</td></tr><?php endif; ?>
+            <?php if (!$batches_paged): ?><tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">কোন ব্যাচ নেই</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>
@@ -1195,6 +1350,15 @@ if ($page === 'batches'):
             <input type="hidden" name="id" value="<?= (int)($editBatch['id'] ?? 0) ?>">
             <div class="field"><label>ব্যাচ নম্বর</label><input type="number" name="batch_no" value="<?= e((string)($editBatch['batch_no'] ?? count($batches)+1)) ?>" required></div>
             <div class="field"><label>মাছের নাম</label><input name="fish_name" value="<?= e((string)($editBatch['fish_name'] ?? '')) ?>" required></div>
+            <div class="field"><label>স্তর</label>
+                <select name="fish_type">
+                    <option value="">নির্ধারিত নয়</option>
+                    <option value="ওপরের স্তর" <?= ($editBatch['fish_type'] ?? '') === 'ওপরের স্তর' ? 'selected' : '' ?>>ওপরের স্তর</option>
+                    <option value="মধ্য স্তর" <?= ($editBatch['fish_type'] ?? '') === 'মধ্য স্তর' ? 'selected' : '' ?>>মধ্য স্তর</option>
+                    <option value="নিচের স্তর" <?= ($editBatch['fish_type'] ?? '') === 'নিচের স্তর' ? 'selected' : '' ?>>নিচের স্তর</option>
+                    <option value="বিশেষ স্তর" <?= ($editBatch['fish_type'] ?? '') === 'বিশেষ স্তর' ? 'selected' : '' ?>>বিশেষ স্তর</option>
+                </select>
+            </div>
             <div class="field"><label>ছাড়ার তারিখ</label><input type="date" name="release_date" value="<?= e((string)($editBatch['release_date'] ?? date('Y-m-d'))) ?>" required></div>
             <div class="field"><label>প্রাথমিক ওজন (kg)</label><input type="number" step="0.01" name="initial_weight" value="<?= e((string)($editBatch['initial_weight'] ?? '0')) ?>" required></div>
             <div class="field"><label>প্রাথমিক সংখ্যা</label><input type="number" name="initial_count" value="<?= e((string)($editBatch['initial_count'] ?? '0')) ?>" required></div>
@@ -1225,17 +1389,18 @@ if ($page === 'growth'):
 
     <div class="table-wrap">
         <table class="table">
-            <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>Live Count</th><th>Live Weight</th><th>Avg Weight</th><th>Growth %</th><th>Survival %</th><th>কাজ</th></tr></thead>
+            <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>স্তর</th><th>Live Count</th><th>Live Weight</th><th>Avg Weight</th><th>Growth %</th><th>Survival %</th><th>কাজ</th></tr></thead>
             <tbody>
             <?php foreach ($snapshots as $s): ?>
             <tr>
                 <td><?= e($s['snapshot_date']) ?></td>
                 <td>B<?= (int)$s['batch_no'] ?> — <?= e($s['fish_name']) ?></td>
+                <td><span class="badge badge-purple"><?= e($s['fish_type'] ?: 'নির্ধারিত নয়') ?></span></td>
                 <td><?= number_format((int)$s['live_count']) ?></td>
-                <td><?= number_format((float)$s['live_weight'],2) ?> kg</td>
-                <td><?= number_format((float)$s['avg_weight'],2) ?> g</td>
-                <td><span class="badge badge-green"><?= number_format((float)$s['growth_percent'],1) ?>%</span></td>
-                <td><?= number_format((float)$s['survival_percent'],1) ?>%</td>
+                <td><?= number_format((float)$s['live_weight'], 2) ?> kg</td>
+                <td><?= number_format((float)$s['avg_weight'], 2) ?> g</td>
+                <td><span class="badge badge-green"><?= number_format((float)$s['growth_percent'], 1) ?>%</span></td>
+                <td><?= number_format((float)$s['survival_percent'], 1) ?>%</td>
                 <td>
                     <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -1246,7 +1411,7 @@ if ($page === 'growth'):
                 </td>
             </tr>
             <?php endforeach; ?>
-            <?php if (!$snapshots): ?><tr><td colspan="8" style="text-align:center;padding:40px">কোন Snapshot নেই</td></tr><?php endif; ?>
+            <?php if (!$snapshots): ?><tr><td colspan="9" style="text-align:center;padding:40px">কোন Snapshot নেই</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>
@@ -1280,7 +1445,15 @@ if ($page === 'feed'):
         <a class="btn btn-info" href="?export=feed_logs">📥 CSV এক্সপোর্ট</a>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px">
+    <?php if ($settings['feed_recipe']): ?>
+    <div class="card" style="background:linear-gradient(135deg,#fef3c7,#fbbf24);border-color:#f59e0b">
+        <h3 style="color:#92400e">📋 দৈনিক খাদ্য রেসিপি (<?= number_format((float)$settings['feed_daily_kg'], 1) ?> কেজি)</h3>
+        <pre style="white-space:pre-wrap;color:#78350f;margin:0;font-family:inherit"><?= e($settings['feed_recipe']) ?></pre>
+        <small style="color:#92400e">প্রয়োগ পদ্ধতি: খামি বানিয়ে চটের বস্তায় পানির ৩-৪ ফুট নিচে ঝুলিয়ে দিন</small>
+    </div>
+    <?php endif; ?>
+
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px;margin-top:20px">
         <div class="card">
             <h3>নতুন খাদ্য রেকর্ড</h3>
             <form method="post" class="form-grid" style="grid-template-columns:1fr">
@@ -1290,6 +1463,15 @@ if ($page === 'feed'):
                 <div class="field"><label>ব্যাচ</label><select name="batch_id"><option value="">সব</option><?php foreach($batches as $b): ?><option value="<?= (int)$b['id'] ?>">B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label>খাদ্য (kg)</label><input type="number" step="0.001" name="feed_kg" required></div>
                 <div class="field"><label>খরচ (৳)</label><input type="number" step="0.01" name="feed_cost" required></div>
+                <div class="field"><label>খাদ্যের ধরন</label>
+                    <select name="feed_type">
+                        <option value="">নির্বাচন করুন</option>
+                        <option value="শুকনো সরিষার খৈল">শুকনো সরিষার খৈল</option>
+                        <option value="গমের ভুসি ও কুঁড়া">গমের ভুসি ও কুঁড়া</option>
+                        <option value="নারিশ ২ মিলি পিলেট ফিড">নারিশ ২ মিলি পিলেট ফিড</option>
+                        <option value="মিক্সচার">মিক্সচার</option>
+                    </select>
+                </div>
                 <div class="field"><label>নোট</label><input name="notes"></div>
                 <button class="btn btn-success" type="submit">💾 সংরক্ষণ</button>
             </form>
@@ -1297,14 +1479,15 @@ if ($page === 'feed'):
 
         <div class="table-wrap">
             <table class="table">
-                <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>খাদ্য</th><th>খরচ</th><th>কাজ</th></tr></thead>
+                <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>খাদ্য</th><th>ধরন</th><th>খরচ</th><th>কাজ</th></tr></thead>
                 <tbody>
                 <?php foreach ($feedLogs as $f): ?>
                 <tr>
                     <td><?= e($f['log_date']) ?></td>
                     <td><?= $f['batch_no'] ? 'B'.(int)$f['batch_no'] : 'পুকুর' ?></td>
-                    <td><?= number_format((float)$f['feed_kg'],3) ?> kg</td>
-                    <td>৳<?= number_format((float)$f['feed_cost'],0) ?></td>
+                    <td><?= number_format((float)$f['feed_kg'], 3) ?> kg</td>
+                    <td><span class="badge badge-yellow"><?= e($f['feed_type'] ?: 'সাধারণ') ?></span></td>
+                    <td>৳<?= number_format((float)$f['feed_cost'], 0) ?></td>
                     <td>
                         <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -1351,14 +1534,15 @@ if ($page === 'health'):
 
         <div class="table-wrap">
             <table class="table">
-                <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>ধরন</th><th>খরচ</th><th>কাজ</th></tr></thead>
+                <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>ধরন</th><th>পরিমাণ</th><th>খরচ</th><th>কাজ</th></tr></thead>
                 <tbody>
                 <?php foreach ($healthLogs as $h): ?>
                 <tr>
                     <td><?= e($h['log_date']) ?></td>
                     <td><?= $h['batch_no'] ? 'B'.(int)$h['batch_no'] : 'পুকুর' ?></td>
-                    <td><?= e($h['log_type']) ?></td>
-                    <td>৳<?= number_format((float)$h['cost'],0) ?></td>
+                    <td><span class="badge badge-purple"><?= e($h['log_type']) ?></span></td>
+                    <td><?= number_format((float)$h['amount'], 2) ?> <?= e($h['unit']) ?></td>
+                    <td>৳<?= number_format((float)$h['cost'], 0) ?></td>
                     <td>
                         <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -1409,8 +1593,8 @@ if ($page === 'expenses'):
                 <tr>
                     <td><?= e($exp['expense_date']) ?></td>
                     <td><?= $exp['batch_no'] ? 'B'.(int)$exp['batch_no'] : 'সাধারণ' ?></td>
-                    <td><?= e($exp['expense_type']) ?></td>
-                    <td>৳<?= number_format((float)$exp['amount'],0) ?></td>
+                    <td><span class="badge badge-yellow"><?= e($exp['expense_type']) ?></span></td>
+                    <td>৳<?= number_format((float)$exp['amount'], 0) ?></td>
                     <td>
                         <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -1435,12 +1619,12 @@ if ($page === 'accounting'):
 <section>
     <h2>📊 সম্পূর্ণ হিসাবনিকাশ</h2>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin:20px 0">
-        <div class="card"><h3>আনুমানিক বাজার মূল্য</h3><div class="kpi-value" style="color:var(--primary)">৳<?= number_format($estimatedMarketValue,0) ?></div></div>
-        <div class="card"><h3>মোট খরচ</h3><div class="kpi-value" style="color:var(--danger)">৳<?= number_format($totalAllExpenses,0) ?></div></div>
+        <div class="card"><h3>আনুমানিক বাজার মূল্য</h3><div class="kpi-value" style="color:var(--primary)">৳<?= number_format($estimatedMarketValue, 0) ?></div></div>
+        <div class="card"><h3>মোট খরচ</h3><div class="kpi-value" style="color:var(--danger)">৳<?= number_format($totalAllExpenses, 0) ?></div></div>
         <div class="card" style="background:<?= $estimatedProfit >= 0 ? '#10b981' : '#ef4444' ?>;color:#fff">
             <h3 style="color:#fff"><?= $estimatedProfit >= 0 ? 'লাভ' : 'ক্ষতি' ?></h3>
-            <div style="font-size:32px;font-weight:800">৳<?= number_format(abs($estimatedProfit),0) ?></div>
-            <div><?= number_format($profitPercent,1) ?>%</div>
+            <div style="font-size:32px;font-weight:800">৳<?= number_format(abs($estimatedProfit), 0) ?></div>
+            <div><?= number_format($profitPercent, 1) ?>%</div>
         </div>
     </div>
 
@@ -1450,11 +1634,36 @@ if ($page === 'accounting'):
             <table class="table">
                 <thead><tr><th>খরচের ধরন</th><th>পরিমাণ</th><th>শতাংশ</th></tr></thead>
                 <tbody>
-                    <tr><td>মাছের ক্রয় মূল্য</td><td>৳<?= number_format($totalInitialCost,0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalInitialCost/$totalAllExpenses)*100,1) : 0 ?>%</td></tr>
-                    <tr><td>খাদ্যের খরচ</td><td>৳<?= number_format($totalFeedCost,0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalFeedCost/$totalAllExpenses)*100,1) : 0 ?>%</td></tr>
-                    <tr><td>স্বাস্থ্য খরচ</td><td>৳<?= number_format($totalHealthCost,0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalHealthCost/$totalAllExpenses)*100,1) : 0 ?>%</td></tr>
-                    <tr><td>অন্যান্য খরচ</td><td>৳<?= number_format($totalExpenses,0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalExpenses/$totalAllExpenses)*100,1) : 0 ?>%</td></tr>
-                    <tr style="font-weight:800;background:var(--bg)"><td>সর্বমোট</td><td>৳<?= number_format($totalAllExpenses,0) ?></td><td>100%</td></tr>
+                    <tr><td>মাছের ক্রয় মূল্য</td><td>৳<?= number_format($totalInitialCost, 0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalInitialCost/$totalAllExpenses)*100, 1) : 0 ?>%</td></tr>
+                    <tr><td>খাদ্যের খরচ</td><td>৳<?= number_format($totalFeedCost, 0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalFeedCost/$totalAllExpenses)*100, 1) : 0 ?>%</td></tr>
+                    <tr><td>স্বাস্থ্য খরচ</td><td>৳<?= number_format($totalHealthCost, 0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalHealthCost/$totalAllExpenses)*100, 1) : 0 ?>%</td></tr>
+                    <tr><td>অন্যান্য খরচ</td><td>৳<?= number_format($totalExpenses, 0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalExpenses/$totalAllExpenses)*100, 1) : 0 ?>%</td></tr>
+                    <tr style="font-weight:800;background:var(--bg)"><td>সর্বমোট</td><td>৳<?= number_format($totalAllExpenses, 0) ?></td><td>100%</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>ব্যাচভিত্তিক লাভ/ক্ষতি</h3>
+        <div class="table-wrap" style="border:none">
+            <table class="table">
+                <thead><tr><th>ব্যাচ</th><th>মাছ</th><th>মোট খরচ</th><th>বর্তমান ওজন</th><th>বাজার মূল্য</th><th>লাভ/ক্ষতি</th></tr></thead>
+                <tbody>
+                <?php foreach ($batches as $b): 
+                    $batchCost = (float)$b['initial_cost'];
+                    $batchValue = (float)$b['current_weight'] * $marketPricePerKg;
+                    $batchProfit = $batchValue - $batchCost;
+                ?>
+                <tr>
+                    <td><span class="badge badge-blue">B<?= (int)$b['batch_no'] ?></span></td>
+                    <td><?= e($b['fish_name']) ?></td>
+                    <td>৳<?= number_format($batchCost, 0) ?></td>
+                    <td><?= number_format((float)$b['current_weight'], 1) ?> kg</td>
+                    <td>৳<?= number_format($batchValue, 0) ?></td>
+                    <td><span class="badge <?= $batchProfit >= 0 ? 'badge-green' : 'badge-red' ?>">৳<?= number_format($batchProfit, 0) ?></span></td>
+                </tr>
+                <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
@@ -1476,22 +1685,29 @@ if ($page === 'analytics'):
                 $growthPercent = $lastSnap ? (float)$lastSnap['growth_percent'] : 0;
             ?>
             <div style="margin:12px 0">
-                <div style="display:flex;justify-content:space-between"><span>B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></span><strong><?= number_format($growthPercent,1) ?>%</strong></div>
+                <div style="display:flex;justify-content:space-between">
+                    <span>B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></span>
+                    <strong><?= number_format($growthPercent, 1) ?>%</strong>
+                </div>
                 <div style="width:100%;height:8px;background:var(--line);border-radius:999px;overflow:hidden;margin-top:4px">
-                    <div style="height:100%;width:<?= min(100,max(0,$growthPercent)) ?>%;background:linear-gradient(90deg,#14b8a6,#0f766e);border-radius:999px"></div>
+                    <div style="height:100%;width:<?= min(100, max(0, $growthPercent)) ?>%;background:linear-gradient(90deg,#14b8a6,#0f766e);border-radius:999px"></div>
                 </div>
             </div>
             <?php endforeach; ?>
         </div>
         <div class="card">
             <h3>প্রকল্প সারাংশ</h3>
+            <p><strong>পুকুরের আয়তন:</strong> <?= e($settings['pond_area'] ?: '৩০ শতাংশ') ?></p>
             <p><strong>পানির গভীরতা:</strong> <?= e($settings['pond_depth']) ?></p>
-            <p><strong>মোট ওজন:</strong> <?= number_format($dashboardCurrentWeight,2) ?> kg</p>
+            <p><strong>মোট ওজন:</strong> <?= number_format($dashboardCurrentWeight, 1) ?> kg</p>
             <p><strong>মোট মাছ:</strong> <?= number_format($totalCount) ?> টি</p>
             <p><strong>মোট ব্যাচ:</strong> <?= count($batches) ?> টি</p>
+            <p><strong>দৈনিক খাদ্য:</strong> <?= number_format((float)$settings['feed_daily_kg'], 1) ?> kg</p>
             <p><strong>শেষ আপডেট:</strong> <?= e($settings['last_midnight_update'] ?: 'এখনো হয়নি') ?></p>
-            <p><strong>পরবর্তী আপডেট:</strong> আজ রাত ১২:০০ টায়</p>
-            <a class="btn btn-info" href="?page=batches&export=batches">📥 ডেটা এক্সপোর্ট</a>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+                <a class="btn btn-info" href="?export=batches">📥 ব্যাচ CSV</a>
+                <a class="btn btn-warning" href="?page=settings">⚙️ সেটিংস</a>
+            </div>
         </div>
     </div>
 </section>
@@ -1549,10 +1765,27 @@ if ($page === 'settings'):
         <form method="post" class="form-grid" style="grid-template-columns:1fr 1fr">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="save_settings">
+            
             <div class="field" style="grid-column:span 2"><label>প্রকল্পের নাম</label><input name="project_name" value="<?= e($settings['project_name']) ?>" required></div>
+            
+            <div class="field"><label>পুকুরের আয়তন</label><input name="pond_area" value="<?= e($settings['pond_area'] ?: '৩০ শতাংশ') ?>"></div>
             <div class="field"><label>পানির গভীরতা</label><input name="pond_depth" value="<?= e($settings['pond_depth']) ?>"></div>
+            
             <div class="field"><label>মোট ওজন (kg)</label><input type="number" step="0.01" name="total_current_weight" value="<?= e((string)$settings['total_current_weight']) ?>"></div>
             <div class="field"><label>বাজার মূল্য (৳/kg)</label><input type="number" step="0.01" name="market_price_per_kg" value="<?= e((string)$settings['market_price_per_kg']) ?>" required></div>
+            
+            <div class="field"><label>দৈনিক খাদ্য (kg)</label><input type="number" step="0.1" name="feed_daily_kg" value="<?= e((string)($settings['feed_daily_kg'] ?? 3.5)) ?>"></div>
+            
+            <div class="field" style="grid-column:span 2">
+                <label>🍚 খাদ্য রেসিপি</label>
+                <textarea name="feed_recipe" rows="5"><?= e($settings['feed_recipe'] ?? "শুকনো সরিষার খৈল: ১.৫ কেজি\nগমের ভুসি ও কুঁড়া: ১.০ কেজি\nনারিশ ২ মিলি পিলেট ফিড: ১.০ কেজি\nসাধারণ লবণ: এক চিমটি") ?></textarea>
+            </div>
+            
+            <div class="field" style="grid-column:span 2">
+                <label>🎯 দীর্ঘমেয়াদী লক্ষ্য</label>
+                <textarea name="long_term_goal" rows="5"><?= e($settings['long_term_goal'] ?? "২ মাস পর লক্ষ্য: ৬৫০টি দামি মাছ\nওপরের স্তর: কাতলা ২০০টি + লাটকাপ ৩০টি\nমধ্য স্তর: রুই ৩০০টি\nনিচের স্তর: কালবাউশ/মৃগেল ৫০টি + কার্পিও ১০টি\nবিশেষ স্তর: পাঙ্গাশ ১০০টি") ?></textarea>
+            </div>
+            
             <div class="field" style="grid-column:span 2"><label>নোট</label><textarea name="notes"><?= e($settings['notes']) ?></textarea></div>
             
             <div class="field">
@@ -1646,12 +1879,10 @@ if ('serviceWorker' in navigator) {
         .catch(() => console.log('SW registration failed'));
 }
 
-// কনসোল মেসেজ
 console.log('🐟 ' + '<?= e(APP_NAME) ?> v<?= e(APP_VERSION) ?>');
-console.log('🔒 নিরাপদ সেশন · CSRF · SQLite');
-console.log('📊 রিয়েল-টাইম ড্যাশবোর্ড');
-console.log('🌙 ডার্ক মোড সাপোর্টেড');
-console.log('📱 PWA রেডি');
+console.log('🏡 ৩০ শতাংশ পুকুর | গভীরতা: ১৮-১৯ ফুট');
+console.log('📊 মোট মাছ: <?= number_format($totalCount) ?> টি | ওজন: <?= number_format($dashboardCurrentWeight, 1) ?> কেজি');
+console.log('🍚 দৈনিক খাদ্য: <?= number_format((float)$settings['feed_daily_kg'], 1) ?> কেজি');
 </script>
 
 </body>
