@@ -1,0 +1,65 @@
+services:
+  - type: web
+    name: pond-fish
+    env: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /
+    
+    # GitHub repository
+    repo: https://github.com/toolkit-pro/pond-fish
+    branch: main
+    
+    # Auto-deploy on push
+    autoDeploy: true
+    
+    # Docker build
+    dockerfilePath: ./Dockerfile
+    
+    # Environment variables
+    envVars:
+      - key: PHP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: error
+    
+    # Persistent disk for SQLite database
+    disk:
+      name: pond-fish-data
+      mountPath: /var/www/html/data
+      sizeGB: 1
+    
+    # Health check configuration
+    healthCheck:
+      path: /
+      protocol: HTTP
+      interval: 30
+      timeout: 10
+      startFailureThreshold: 5
+      startSuccessThreshold: 1
+      failureThreshold: 3
+    
+    # Pre-deploy command
+    preDeployCommand: mkdir -p /var/www/html/data && chmod 755 /var/www/html/data
+    
+    # Build settings
+    buildCommand: ""
+    startCommand: ""
+    
+    # Route
+    routes:
+      - path: /
+        destination: /
+    
+    # Max instances for free tier
+    maxInstances: 1
+    minInstances: 1
+    
+    # Resource limits
+    numInstances: 1
+
+# Database configuration (for future use)
+databases: []
+
+# Cron jobs (for future use)
+cronJobs: []
