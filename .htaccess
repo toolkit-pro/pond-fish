@@ -1,185 +1,102 @@
-# Pond Fish Project - Apache Security Configuration
-# Comprehensive security rules for production environment
+# ============================================
+# সম্পূর্ণ সংশোধিত .htaccess ফাইল
+# Render.com-এর সাথে সামঞ্জস্যপূর্ণ
+# ============================================
 
-# Enable rewrite engine
+# Apache মডিউল চেক
 <IfModule mod_rewrite.c>
     RewriteEngine On
     
-    # Remove .php extension from URLs (optional)
-    # RewriteCond %{REQUEST_FILENAME} !-d
-    # RewriteCond %{REQUEST_FILENAME}\.php -f
-    # RewriteRule ^([^\.]+)$ $1.php [NC, L]
+    # HTTP থেকে HTTPS-এ রিডাইরেক্ট (Render-এর জন্য প্রয়োজনীয়)
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+    
+    # ইন্ডেক্স পৃষ্ঠা সেট করা
+    DirectoryIndex index.php index.html
+    
+    # URL রিডাইরেক্ট (যদি প্রয়োজন হয়)
+    # RewriteRule ^old-page$ /new-page [R=301,L]
 </IfModule>
 
-# Disable directory listing
-<IfModule mod_autoindex.c>
-    Options -Indexes
+# ============================================
+# নিরাপত্তা হেডার (সব রিকোয়েস্টের জন্য)
+# ============================================
+<IfModule mod_headers.c>
+    # XSS সুরক্ষা
+    Header set X-XSS-Protection "1; mode=block" env=!dont-set-header
+    
+    # কন্টেন্ট টাইপ স্নিফিং প্রতিরোধ
+    Header set X-Content-Type-Options "nosniff" env=!dont-set-header
+    
+    # রেফারার পলিসি
+    Header set Referrer-Policy "strict-origin-when-cross-origin" env=!dont-set-header
+    
+    # HSTS (শুধুমাত্র HTTPS-এর জন্য)
+    Header set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" env=!dont-set-header
+    
+    # ফ্রেমিং প্রতিরোধ (ক্লিকজ্যাকিং)
+    Header always append X-Frame-Options SAMEORIGIN
 </IfModule>
 
-# Protect sensitive files and directories
-<FilesMatch "^\.">
-    <IfModule mod_authz_core.c>
-        Require all denied
-    </IfModule>
-    <IfModule !mod_authz_core.c>
-        Order allow,deny
-        Deny from all
-    </IfModule>
+# ============================================
+# ফাইল অ্যাক্সেস সুরক্ষা (ServerTokens-এর পরিবর্তে FilesMatch ব্যবহার)
+# ============================================
+<FilesMatch "\.(htaccess|htpasswd|ini|log|sh|sql|json|lock|config)$">
+    Require all denied
 </FilesMatch>
 
-# Protect SQLite files
-<FilesMatch "\.(sqlite|sqlite-journal|sqlite-wal|sqlite-shm|db)$">
-    <IfModule mod_authz_core.c>
-        Require all denied
-    </IfModule>
-    <IfModule !mod_authz_core.c>
-        Order allow,deny
-        Deny from all
-    </IfModule>
+# ============================================
+# সংবেদনশীল ফাইল সুরক্ষা
+# ============================================
+<FilesMatch "(^\.|composer\.|package\.|web\.|artisan$)">
+    Require all denied
 </FilesMatch>
 
-# Protect configuration files
-<FilesMatch "\.(env|config|ini|htaccess|htpasswd|bak|backup|old)$">
-    <IfModule mod_authz_core.c>
-        Require all denied
-    </IfModule>
-    <IfModule !mod_authz_core.c>
-        Order allow,deny
-        Deny from all
-    </IfModule>
-</FilesMatch>
+# ============================================
+# ডিরেক্টরি লিস্টিং বন্ধ করা
+# ============================================
+Options -Indexes
 
-# Protect PHP files in data directory
-<FilesMatch "^data/.*\.(php|php3|php4|php5|php7|php8|phtml|phps|pht|phar)$">
-    <IfModule mod_authz_core.c>
+# ============================================
+# ডেটা ডিরেক্টরি সুরক্ষা (ডিরেক্টরি ডিরেক্টিভের পরিবর্তে)
+# ============================================
+<IfModule mod_authz_core.c>
+    # ডেটা ফোল্ডারের ফাইল অ্যাক্সেস নিষিদ্ধ
+    <FilesMatch "^(data/).*\.(db|sqlite|sqlite3|log)$">
         Require all denied
-    </IfModule>
-    <IfModule !mod_authz_core.c>
-        Order allow,deny
-        Deny from all
-    </IfModule>
-</FilesMatch>
-
-# Set PHP directives
-<IfModule mod_php.c>
-    php_value memory_limit 256M
-    php_value upload_max_filesize 100M
-    php_value post_max_size 100M
-    php_value max_execution_time 300
-    php_value default_charset "UTF-8"
-    php_flag display_errors Off
-    php_flag log_errors On
-    php_value error_log "/var/log/php-errors.log"
+    </FilesMatch>
 </IfModule>
 
-# Enable GZIP compression
-<IfModule mod_deflate.c>
-    AddOutputFilterByType DEFLATE text/plain
-    AddOutputFilterByType DEFLATE text/html
-    AddOutputFilterByType DEFLATE text/xml
-    AddOutputFilterByType DEFLATE text/css
-    AddOutputFilterByType DEFLATE text/javascript
-    AddOutputFilterByType DEFLATE application/xml
-    AddOutputFilterByType DEFLATE application/xhtml+xml
-    AddOutputFilterByType DEFLATE application/rss+xml
-    AddOutputFilterByType DEFLATE application/javascript
-    AddOutputFilterByType DEFLATE application/x-javascript
-    AddOutputFilterByType DEFLATE application/json
-</IfModule>
+# ============================================
+# ত্রুটি পৃষ্ঠা কাস্টমাইজেশন
+# ============================================
+ErrorDocument 404 /404.php
+ErrorDocument 403 /403.php
+ErrorDocument 500 /500.php
 
-# Browser caching
+# ============================================
+# পারফরম্যান্স: ক্যাশিং (সাধারণ ফাইলের জন্য)
+# ============================================
 <IfModule mod_expires.c>
     ExpiresActive On
-    ExpiresByType text/html "access 1 hour"
-    ExpiresByType text/css "access 1 month"
-    ExpiresByType text/javascript "access 1 month"
-    ExpiresByType application/javascript "access 1 month"
-    ExpiresByType image/jpeg "access 1 year"
-    ExpiresByType image/gif "access 1 year"
-    ExpiresByType image/png "access 1 year"
-    ExpiresByType image/svg+xml "access 1 year"
-    ExpiresByType font/truetype "access 1 year"
-    ExpiresByType font/woff "access 1 year"
-    ExpiresByType font/woff2 "access 1 year"
-    ExpiresDefault "access 1 week"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType text/javascript "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
 </IfModule>
 
-# Security headers
-<IfModule mod_headers.c>
-    # Prevent clickjacking
-    Header always set X-Frame-Options "SAMEORIGIN"
-    
-    # Enable XSS filtering
-    Header always set X-XSS-Protection "1; mode=block"
-    
-    # Prevent MIME type sniffing
-    Header always set X-Content-Type-Options "nosniff"
-    
-    # Content Security Policy
-    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';"
-    
-    # Referrer Policy
-    Header always set Referrer-Policy "strict-origin-when-cross-origin"
-    
-    # Disable server signature
-    Header always unset Server
-    Header always unset X-Powered-By
-    
-    # HSTS (uncomment if using HTTPS)
-    # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+# ============================================
+# কম্প্রেশন (Gzip)
+# ============================================
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript
+    AddOutputFilterByType DEFLATE application/javascript application/x-javascript
+    AddOutputFilterByType DEFLATE application/json application/xml application/rss+xml
+    AddOutputFilterByType DEFLATE image/svg+xml
 </IfModule>
-
-# Remove server signature
-ServerTokens Prod
-ServerSignature Off
-
-# Block suspicious user agents and SQL injection
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    
-    # Block common attack patterns
-    RewriteCond %{QUERY_STRING} (<|%3C).*script.*(>|%3E) [NC,OR]
-    RewriteCond %{QUERY_STRING} UNION.*SELECT [NC,OR]
-    RewriteCond %{QUERY_STRING} INSERT.*INTO.*VALUES [NC,OR]
-    RewriteCond %{QUERY_STRING} DELETE.*FROM [NC,OR]
-    RewriteCond %{QUERY_STRING} DROP.*TABLE [NC,OR]
-    RewriteCond %{QUERY_STRING} UPDATE.*SET [NC,OR]
-    RewriteCond %{QUERY_STRING} exec\( [NC,OR]
-    RewriteCond %{QUERY_STRING} eval\( [NC,OR]
-    RewriteCond %{QUERY_STRING} base64_decode\( [NC]
-    RewriteRule ^ - [F,L]
-    
-    # Block access to specific file patterns
-    RewriteRule \.(sql|conf|ini|env|bak|backup)$ - [F,L]
-    
-    # Disable unnecessary HTTP methods
-    RewriteCond %{REQUEST_METHOD} ^(TRACE|TRACK|DELETE|CONNECT) [NC]
-    RewriteRule ^ - [F,L]
-</IfModule>
-
-# Enable ETags for caching
-<IfModule mod_expires.c>
-    FileETag MTime Size
-</IfModule>
-
-# Error documents
-ErrorDocument 403 "অ্যাক্সেস নিষিদ্ধ - Access Forbidden"
-ErrorDocument 404 "পৃষ্ঠা পাওয়া যায়নি - Page Not Found"
-ErrorDocument 500 "সার্ভার ত্রুটি - Internal Server Error"
-
-# Force UTF-8 charset
-AddDefaultCharset UTF-8
-AddCharset UTF-8 .html .css .js .xml .json .php
-
-# Add correct MIME types
-AddType application/json .json
-AddType application/javascript .js
-AddType text/css .css
-AddType image/svg+xml .svg
-AddType font/woff .woff
-AddType font/woff2 .woff2
-
-# Allow .woff and .woff2 fonts from any origin
-<FilesMatch "\.(woff|woff2|ttf|eot|svg)$">
-    Header add Access-Control-Allow-Origin "*"
-</FilesMatch>
