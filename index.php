@@ -1,22 +1,23 @@
 <?php
 /**
- * POND FISH PROJECT DASHBOARD — COMPLETE WEBSITE UPDATE v7.4
- * সম্পূর্ণ ওয়েবসাইট আপডেট - মোবাইল-ফ্রেন্ডলি + ৩০ শতাংশ পুকুরের ডেটা
+ * POND FISH PROJECT DASHBOARD - COMPLETE ALL-IN-ONE
+ * পুকুর মাছ চাষ প্রকল্প - সম্পূর্ণ ড্যাশবোর্ড
+ * Version: 7.5.0
  * 
- * বৈশিষ্ট্য:
- * - সম্পূর্ণ মোবাইল-ফার্স্ট ডিজাইন
- * - থাম্ব-ফ্রেন্ডলি ইন্টারফেস
- * - PWA সাপোর্ট
+ * নতুন আপডেট:
+ * - ৫ম ব্যাচ (রুই) যোগ করা হয়েছে
+ * - মোট মাছ: ১,৩৯০টি
+ * - মোট ওজন: ৫৫.৫ কেজি
+ * - সম্পূর্ণ মোবাইল-ফ্রেন্ডলি
  * - ডার্ক/লাইট মোড
- * - ৩০ শতাংশ পুকুরের ডেটা ইন্টিগ্রেটেড
- * - চার্ট, রিপোর্ট, অ্যানালিটিক্স
+ * - PWA সাপোর্ট
  */
 
 declare(strict_types=1);
 
 // ==================== কনফিগারেশন ====================
 const APP_NAME = 'পুকুর মাছ চাষ প্রকল্প';
-const APP_VERSION = '7.4.0';
+const APP_VERSION = '7.5.0';
 const DEFAULT_PIN = '3894';
 const SESSION_TIMEOUT = 7200;
 const DB_DIR = __DIR__ . DIRECTORY_SEPARATOR . 'data';
@@ -92,6 +93,7 @@ function install_schema(PDO $pdo): void {
             pond_depth TEXT DEFAULT '',
             pond_area TEXT DEFAULT '৩০ শতাংশ',
             total_current_weight REAL DEFAULT 0,
+            total_current_count INTEGER DEFAULT 0,
             notes TEXT DEFAULT '',
             last_midnight_update TEXT DEFAULT '',
             market_price_per_kg REAL DEFAULT 0,
@@ -131,6 +133,7 @@ function install_schema(PDO $pdo): void {
             current_weight REAL NOT NULL DEFAULT 0,
             current_avg_weight REAL DEFAULT 0,
             days_in_pond INTEGER DEFAULT 0,
+            survival_rate REAL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'active',
             notes TEXT DEFAULT '',
             created_at TEXT NOT NULL,
@@ -212,14 +215,15 @@ function install_schema(PDO $pdo): void {
         
         $stmt = $pdo->prepare("
             INSERT INTO settings
-            (id, project_name, pond_depth, pond_area, total_current_weight, notes, last_midnight_update, 
-             market_price_per_kg, dark_mode, email_notifications, notification_email, 
-             feed_daily_kg, feed_recipe, long_term_goal, created_at, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, project_name, pond_depth, pond_area, total_current_weight, total_current_count,
+             notes, last_midnight_update, market_price_per_kg, dark_mode, 
+             email_notifications, notification_email, feed_daily_kg, feed_recipe, 
+             long_term_goal, created_at, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
-            APP_NAME, '১৮–১৯ ফুট', '৩০ শতাংশ', 85, 
-            '৭ সেপ্টেম্বর ২০২৬-এর ভিত্তি রেকর্ড | মোট মাছ: ১,২৫০-১,৩৭০টি',
+            APP_NAME, '১৮–১৯ ফুট', '৩০ শতাংশ', 55.5, 1390,
+            '৭ সেপ্টেম্বর ২০২৬-এর ভিত্তি রেকর্ড | মোট মাছ: ১,৩৯০টি',
             date('Y-m-d'), 200, 0, 0, '',
             3.5, $feed_recipe, $long_term_goal, $now, $now
         ]);
@@ -249,6 +253,7 @@ function install_schema(PDO $pdo): void {
 function seed_initial_data(PDO $pdo): void {
     $now = date('Y-m-d H:i:s');
     
+    // ৫ম ব্যাচ সহ সম্পূর্ণ ডেটা (আপনার ৩০ শতাংশ পুকুরের ডেটা)
     $rows = [
         [
             'batch_no' => 1,
@@ -260,7 +265,7 @@ function seed_initial_data(PDO $pdo): void {
             'current_count' => 920,
             'current_weight' => 0,
             'initial_cost' => 15000,
-            'notes' => 'কেজিতে ১৭০টি পোনা | ৬১ দিন (২ মাস) | বর্তমান গড় ওজন ২০-৩০ গ্রাম'
+            'notes' => 'কেজিতে ১৭০টি পোনা | ৬১ দিন (২ মাস) | বর্তমান গড় ওজন ২০-৩০ গ্রাম | মৃত: ৩-৩.৫ কেজি'
         ],
         [
             'batch_no' => 2,
@@ -272,7 +277,7 @@ function seed_initial_data(PDO $pdo): void {
             'current_count' => 280,
             'current_weight' => 0,
             'initial_cost' => 12000,
-            'notes' => 'কেজিতে ১০-১১টি | ৪৭ দিন (১.৫ মাস) | বর্তমান গড় ওজন ১৫০-১৮০ গ্রাম'
+            'notes' => 'কেজিতে ১০-১১টি | ৪৭ দিন (১.৫ মাস) | বর্তমান গড় ওজন ১৫০-১৮০ গ্রাম | ২৮০টি চূড়ান্ত'
         ],
         [
             'batch_no' => 3,
@@ -308,7 +313,7 @@ function seed_initial_data(PDO $pdo): void {
             'current_count' => 70,
             'current_weight' => 6,
             'initial_cost' => 3500,
-            'notes' => 'গড় ৮৫ গ্রাম | আজকে নতুন ছাড়া হয়েছে | সুস্থ ও সবল'
+            'notes' => 'গড় ৮৫.৭ গ্রাম | আজকে নতুন ছাড়া হয়েছে | সুস্থ ও সবল | Survival: ১০০%'
         ]
     ];
 
@@ -556,7 +561,7 @@ if (isset($_GET['export'])) {
     $table = $_GET['export'];
     $columns = [
         'batches' => ['batch_no', 'fish_name', 'fish_type', 'release_date', 'initial_weight', 'initial_count', 
-                      'current_count', 'current_weight', 'current_avg_weight', 'days_in_pond', 'status', 'notes'],
+                      'current_count', 'current_weight', 'current_avg_weight', 'days_in_pond', 'survival_rate', 'status', 'notes'],
         'feed_logs' => ['log_date', 'feed_kg', 'feed_cost', 'feed_type', 'notes'],
         'health_logs' => ['log_date', 'log_type', 'amount', 'unit', 'cost', 'details'],
         'expense_logs' => ['expense_date', 'expense_type', 'amount', 'notes'],
@@ -627,7 +632,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'save_settings') {
             $stmt = $pdo->prepare("
                 UPDATE settings SET 
-                project_name=?, pond_depth=?, pond_area=?, total_current_weight=?, 
+                project_name=?, pond_depth=?, pond_area=?, total_current_weight=?, total_current_count=?,
                 notes=?, market_price_per_kg=?, email_notifications=?, notification_email=?,
                 feed_daily_kg=?, feed_recipe=?, long_term_goal=?, updated_at=?
                 WHERE id=1
@@ -637,6 +642,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 trim($_POST['pond_depth']),
                 trim($_POST['pond_area']),
                 normalize_float($_POST['total_current_weight']),
+                normalize_int($_POST['total_current_count']),
                 trim($_POST['notes']),
                 normalize_float($_POST['market_price_per_kg']),
                 isset($_POST['email_notifications']) ? 1 : 0,
@@ -675,6 +681,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $avg = $data[5] > 0 ? ($data[4] * 1000) / $data[5] : 0;
             $days = days_between($releaseDate, date('Y-m-d'));
+            $survival = $data[5] > 0 ? ($data[9] / $data[5]) * 100 : 0;
 
             if ($id > 0) {
                 $stmt = $pdo->prepare("
@@ -682,10 +689,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     batch_no=?, fish_name=?, fish_type=?, release_date=?, 
                     initial_weight=?, initial_count=?, initial_cost=?, 
                     death_weight=?, death_count=?, current_count=?, 
-                    current_weight=?, current_avg_weight=?, days_in_pond=?, notes=?, updated_at=?
+                    current_weight=?, current_avg_weight=?, days_in_pond=?, 
+                    survival_rate=?, notes=?, updated_at=?
                     WHERE id=?
                 ");
-                $stmt->execute([...$data, $avg, $days, date('Y-m-d H:i:s'), $id]);
+                $stmt->execute([...$data, $avg, $days, $survival, date('Y-m-d H:i:s'), $id]);
                 audit('update', 'batch', $id);
             } else {
                 $stmt = $pdo->prepare("
@@ -693,13 +701,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     (batch_no, fish_name, fish_type, release_date, initial_weight, initial_count,
                      initial_avg_weight, initial_cost, death_weight, death_count,
                      current_count, current_weight, current_avg_weight, days_in_pond,
-                     notes, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     survival_rate, notes, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $data[0], $data[1], $data[2], $data[3], $data[4], $data[5],
                     $avg, $data[6], $data[7], $data[8], $data[9], $data[10],
-                    $avg, $days, $data[11], date('Y-m-d H:i:s'), date('Y-m-d H:i:s')
+                    $avg, $days, $survival, $data[11], 
+                    date('Y-m-d H:i:s'), date('Y-m-d H:i:s')
                 ]);
                 audit('create', 'batch', (int)$pdo->lastInsertId());
             }
@@ -845,6 +854,7 @@ $batches = $batches->fetchAll();
 foreach ($batches as &$b) {
     $b['current_avg_weight'] = $b['current_count'] > 0 ? ($b['current_weight'] * 1000) / $b['current_count'] : 0;
     $b['days_in_pond'] = days_between($b['release_date'], date('Y-m-d'));
+    $b['survival_rate'] = $b['initial_count'] > 0 ? ($b['current_count'] / $b['initial_count']) * 100 : 0;
 }
 unset($b);
 
@@ -861,6 +871,7 @@ $totalDeathCount = array_sum(array_column($batches, 'death_count'));
 $totalInitialCost = array_sum(array_column($batches, 'initial_cost'));
 
 $dashboardCurrentWeight = (float)$settings['total_current_weight'] > 0 ? (float)$settings['total_current_weight'] : $totalCurrentWeight;
+$dashboardTotalCount = (int)$settings['total_current_count'] > 0 ? (int)$settings['total_current_count'] : $totalCount;
 $overallGain = $dashboardCurrentWeight - $totalInitialWeight;
 
 $totalFeedCost = (float)$pdo->query("SELECT COALESCE(SUM(feed_cost),0) FROM feed_logs")->fetchColumn();
@@ -1004,7 +1015,6 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-/* ==================== CSS Variables ==================== */
 :root {
     --bg: #f8fafc;
     --card: #ffffff;
@@ -1036,7 +1046,6 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch
     --shadow-lg: 0 10px 40px rgba(0,0,0,0.5);
 }
 
-/* ==================== Reset & Base ==================== */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans Bengali',system-ui,-apple-system,sans-serif;transition:background 0.3s,color 0.3s;touch-action:manipulation;overscroll-behavior-y:none;padding-bottom:env(safe-area-inset-bottom)}
@@ -1044,143 +1053,108 @@ input,textarea,select,button{font-family:inherit;font-size:16px;-webkit-appearan
 input[type="number"]{-moz-appearance:textfield}
 input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none}
 a{text-decoration:none;color:inherit}
-
-/* ==================== Container ==================== */
 .wrap{width:100%;max-width:1400px;margin:0 auto;padding:0 12px}
 
-/* ==================== Top Navigation ==================== */
 .top-nav{position:sticky;top:0;z-index:100;background:var(--card);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--line);padding:0 12px;transition:background var(--transition)}
 .nav-inner{min-height:60px;display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:1400px;margin:0 auto}
-.brand{font-weight:800;font-size:18px;color:var(--primary);display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden;cursor:pointer;transition:opacity var(--transition)}
-.brand:active{opacity:0.7}
+.brand{font-weight:800;font-size:18px;color:var(--primary);display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden;cursor:pointer}
 .brand-icon{width:36px;height:36px;min-width:36px;border-radius:10px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px}
 .brand span{overflow:hidden;text-overflow:ellipsis}
 .nav-actions{display:flex;gap:6px;align-items:center}
 .nav-actions .btn{font-size:13px;padding:8px 14px}
-.nav-actions .btn-logout{background:#fee2e2;color:#991b1b;border:0;padding:8px 14px;border-radius:var(--radius-sm);font-weight:600;cursor:pointer;transition:all 0.2s;font-size:13px;white-space:nowrap}
-.nav-actions .btn-logout:active{transform:scale(0.95)}
+.btn-logout{background:#fee2e2;color:#991b1b;border:0;padding:8px 14px;border-radius:var(--radius-sm);font-weight:600;cursor:pointer;transition:all 0.2s;font-size:13px}
+.btn-logout:active{transform:scale(0.95)}
 
-/* ==================== Bottom Navigation (Mobile) ==================== */
-.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);z-index:1000;padding:6px 0 calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 20px rgba(0,0,0,0.05);transition:background var(--transition)}
-.mobile-nav-inner{display:flex;justify-content:space-around;align-items:center;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:2px;padding:0 4px}
-.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;text-decoration:none;color:var(--muted);font-size:9px;font-weight:600;padding:4px 6px;border-radius:8px;transition:all 0.2s;min-width:44px;touch-action:manipulation;position:relative}
-.mobile-nav-item:active{transform:scale(0.92)}
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);z-index:1000;padding:6px 0 calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 20px rgba(0,0,0,0.05)}
+.mobile-nav-inner{display:flex;justify-content:space-around;align-items:center;overflow-x:auto;gap:2px;padding:0 4px}
+.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;text-decoration:none;color:var(--muted);font-size:9px;font-weight:600;padding:4px 6px;border-radius:8px;min-width:44px;position:relative}
 .mobile-nav-item.active{color:var(--primary)}
 .mobile-nav-item.active::after{content:'';position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:20px;height:3px;background:var(--primary);border-radius:999px}
 .mobile-nav-item .nav-icon{font-size:20px;line-height:1}
-.mobile-nav-item span{line-height:1.2}
 
-/* ==================== Cards ==================== */
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;transition:all var(--transition)}
-.card:active{transform:scale(0.99)}
-.kpi-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;transition:all var(--transition);cursor:pointer;touch-action:manipulation;position:relative;overflow:hidden}
+.kpi-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;transition:all var(--transition);cursor:pointer;position:relative;overflow:hidden}
 .kpi-card:active{transform:scale(0.97);box-shadow:var(--shadow-lg)}
 .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--primary),var(--accent));opacity:0;transition:opacity var(--transition)}
 .kpi-card:hover::before{opacity:1}
-.kpi-value{font-size:24px;font-weight:800;line-height:1.2;transition:color var(--transition)}
+.kpi-value{font-size:24px;font-weight:800;line-height:1.2}
 .kpi-label{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:4px}
-
-/* ==================== KPI Grid ==================== */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0}
 
-/* ==================== Buttons ==================== */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;background:var(--primary);color:#fff;padding:10px 16px;border-radius:var(--radius-sm);font-weight:700;text-decoration:none;cursor:pointer;transition:all 0.2s;font-size:14px;touch-action:manipulation;min-height:44px;min-width:44px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;background:var(--primary);color:#fff;padding:10px 16px;border-radius:var(--radius-sm);font-weight:700;text-decoration:none;cursor:pointer;transition:all 0.2s;font-size:14px;min-height:44px;min-width:44px}
 .btn:active{transform:scale(0.95)}
 .btn-primary{background:var(--primary)}
 .btn-danger{background:var(--danger)}
 .btn-success{background:var(--success)}
 .btn-info{background:var(--info)}
-.btn-warning{background:var(--warning)}
 .btn-outline{background:transparent;border:2px solid var(--line);color:var(--ink)}
 .btn-sm{font-size:12px;padding:6px 12px;min-height:36px;min-width:36px}
 .btn-xs{font-size:11px;padding:4px 8px;min-height:32px;min-width:32px}
 .btn-block{width:100%;justify-content:center}
 
-/* ==================== Table ==================== */
-.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--line);background:var(--card);-webkit-overflow-scrolling:touch;transition:background var(--transition)}
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--line);background:var(--card);-webkit-overflow-scrolling:touch}
 .table{width:100%;border-collapse:collapse;min-width:600px;font-size:13px}
-.table th,.table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;transition:border-color var(--transition)}
+.table th,.table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
 .table th{background:var(--bg);font-weight:700;font-size:11px;text-transform:uppercase;color:var(--muted);position:sticky;top:0;z-index:5}
 .table tr:last-child td{border-bottom:none}
 .table .action-btns{display:flex;gap:4px;flex-wrap:wrap}
-.table tbody tr{transition:background var(--transition)}
 .table tbody tr:hover{background:var(--bg)}
 
-/* ==================== Badges ==================== */
 .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
 .badge-green{background:#ecfdf5;color:#059669}
 .badge-red{background:#fef2f2;color:#dc2626}
 .badge-blue{background:#eff6ff;color:#2563eb}
 .badge-yellow{background:#fef3c7;color:#d97706}
 .badge-purple{background:#f3e8ff;color:#7c3aed}
-.badge-gray{background:#f1f5f9;color:#475569}
 
-/* ==================== Forms ==================== */
 .form-grid{display:grid;grid-template-columns:1fr;gap:12px}
-.field label{display:block;font-size:13px;font-weight:700;margin-bottom:4px;color:var(--muted);transition:color var(--transition)}
+.field label{display:block;font-size:13px;font-weight:700;margin-bottom:4px;color:var(--muted)}
 .field input,.field select,.field textarea{width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);font:inherit;transition:all var(--transition);font-size:16px}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 4px rgba(15,118,110,0.1)}
 .field textarea{min-height:80px;resize:vertical}
 
-/* ==================== Search Bar ==================== */
 .search-bar{display:flex;flex-direction:column;gap:8px;margin:12px 0}
 .search-bar .search-row{display:flex;gap:8px;flex-wrap:wrap}
-.search-bar input,.search-bar select{flex:1;min-width:120px;padding:10px 14px;border:2px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);font:inherit;font-size:14px;transition:all var(--transition)}
+.search-bar input,.search-bar select{flex:1;min-width:120px;padding:10px 14px;border:2px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);font:inherit;font-size:14px}
 .search-bar input:focus,.search-bar select:focus{outline:none;border-color:var(--primary)}
 
-/* ==================== Charts ==================== */
-.chart-container{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:12px 0;transition:all var(--transition)}
+.chart-container{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:12px 0}
 .chart-container h3{font-size:15px;margin-bottom:12px;color:var(--ink)}
 .chart-grid{display:grid;grid-template-columns:1fr;gap:12px}
 
-/* ==================== Pond Info ==================== */
 .pond-info{background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;border-radius:var(--radius);padding:16px;margin:12px 0;animation:slideDown 0.5s ease}
 @keyframes slideDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
 .pond-info h3{color:#fff;font-size:16px;margin-bottom:10px}
 .pond-info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.pond-info-item{background:rgba(255,255,255,0.12);border-radius:var(--radius-sm);padding:10px;text-align:center;transition:background var(--transition)}
-.pond-info-item:active{background:rgba(255,255,255,0.2)}
+.pond-info-item{background:rgba(255,255,255,0.12);border-radius:var(--radius-sm);padding:10px;text-align:center}
 .pond-info-item .label{font-size:10px;opacity:0.8;text-transform:uppercase;letter-spacing:0.5px}
 .pond-info-item .value{font-size:16px;font-weight:700}
 
-/* ==================== Notices ==================== */
 .notice{padding:12px 16px;border-radius:var(--radius-sm);margin:12px 0;font-weight:600;font-size:14px;animation:slideIn 0.3s ease}
 @keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
 .notice-success{background:#ecfdf5;color:#065f46;border-left:4px solid #10b981}
 .notice-error{background:#fef2f2;color:#991b1b;border-left-color:#ef4444}
-.notice-info{background:#eff6ff;color:#1e40af;border-left-color:#3b82f6}
 
-/* ==================== Pagination ==================== */
 .pagination{display:flex;gap:4px;justify-content:center;margin:16px 0;flex-wrap:wrap}
-.pagination a,.pagination span{padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--line);text-decoration:none;color:var(--ink);font-size:14px;min-width:36px;text-align:center;touch-action:manipulation;transition:all var(--transition)}
-.pagination a:active{transform:scale(0.92)}
+.pagination a,.pagination span{padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--line);text-decoration:none;color:var(--ink);font-size:14px;min-width:36px;text-align:center}
 .pagination .active{background:var(--primary);color:#fff;border-color:var(--primary)}
 .pagination a:hover{background:var(--line)}
 
-/* ==================== Footer ==================== */
-.footer{padding:24px 0;text-align:center;color:var(--muted);border-top:1px solid var(--line);margin-top:24px;font-size:12px;transition:all var(--transition)}
+.footer{padding:24px 0;text-align:center;color:var(--muted);border-top:1px solid var(--line);margin-top:24px;font-size:12px}
 
-/* ==================== Grid Layouts ==================== */
 .two-col{display:grid;grid-template-columns:1fr;gap:12px}
 .three-col{display:grid;grid-template-columns:1fr;gap:12px}
 
-/* ==================== Touch Optimizations ==================== */
 .touchable{transition:transform 0.15s;touch-action:manipulation}
 .touchable:active{transform:scale(0.96)}
-.touchable-ripple{position:relative;overflow:hidden}
-.touchable-ripple::after{content:'';position:absolute;inset:0;background:radial-gradient(circle,var(--primary) 10%,transparent 10%);opacity:0;transform:scale(10);transition:all 0.5s}
-.touchable-ripple:active::after{opacity:0.3;transform:scale(0)}
 
-/* ==================== Pull-to-refresh prevention ==================== */
 body{overscroll-behavior-y:contain}
 
-/* ==================== Responsive Breakpoints ==================== */
 @media(min-width:480px){
     .kpi-grid{grid-template-columns:repeat(2,1fr)}
     .search-bar{flex-direction:row;flex-wrap:wrap}
     .search-bar .search-row{flex:1}
 }
-
 @media(min-width:640px){
     .kpi-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
     .two-col{grid-template-columns:1fr 1fr}
@@ -1191,12 +1165,10 @@ body{overscroll-behavior-y:contain}
     .pond-info-grid{grid-template-columns:repeat(3,1fr)}
     .wrap{padding:0 16px}
 }
-
 @media(min-width:768px){
     .mobile-nav{display:none!important}
     .nav-links{display:flex!important}
 }
-
 @media(max-width:767px){
     .mobile-nav{display:block}
     .nav-links{display:none}
@@ -1208,13 +1180,11 @@ body{overscroll-behavior-y:contain}
     .table{font-size:12px;min-width:500px}
     .table th,.table td{padding:8px 10px}
     .btn{font-size:13px;padding:8px 14px;min-height:40px}
-    .btn-sm{font-size:11px;padding:4px 10px;min-height:32px;min-width:32px}
     .pond-info .value{font-size:14px}
     .pond-info-item{padding:8px}
     .wrap{padding:0 8px}
     body{padding-bottom:70px}
 }
-
 @media(max-width:400px){
     .kpi-grid{grid-template-columns:1fr 1fr;gap:6px}
     .kpi-value{font-size:17px}
@@ -1223,21 +1193,12 @@ body{overscroll-behavior-y:contain}
     .mobile-nav-item .nav-icon{font-size:17px}
     .brand{font-size:13px}
     .brand-icon{width:26px;height:26px;min-width:26px;font-size:13px}
-    .table{font-size:11px;min-width:400px}
-    .table th,.table td{padding:6px 8px}
 }
-
-/* ==================== Print Styles ==================== */
 @media print{
     .top-nav,.mobile-nav,.btn,.no-print{display:none!important}
     body{padding:0!important;background:#fff!important}
     .card{box-shadow:none!important;border:1px solid #ddd!important}
-    .kpi-card{box-shadow:none!important;border:1px solid #ddd!important}
 }
-
-/* ==================== Dark Mode Toggle Animation ==================== */
-.theme-toggle{transition:transform 0.5s ease}
-.theme-toggle:hover{transform:rotate(20deg)}
 </style>
 </head>
 <body>
@@ -1251,19 +1212,19 @@ body{overscroll-behavior-y:contain}
         </div>
         <div class="nav-actions">
             <div class="nav-links" style="display:flex;gap:4px;align-items:center">
-                <a href="?page=dashboard" class="btn <?= $page === 'dashboard' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="ড্যাশবোর্ড">📊</a>
-                <a href="?page=batches" class="btn <?= $page === 'batches' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="ব্যাচ">🐠</a>
-                <a href="?page=growth" class="btn <?= $page === 'growth' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="গ্রোথ">📈</a>
-                <a href="?page=feed" class="btn <?= $page === 'feed' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="খাদ্য">🍚</a>
-                <a href="?page=health" class="btn <?= $page === 'health' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="স্বাস্থ্য">💊</a>
-                <a href="?page=accounting" class="btn <?= $page === 'accounting' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="হিসাব">💰</a>
-                <a href="?page=analytics" class="btn <?= $page === 'analytics' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="এনালাইসিস">📊</a>
+                <a href="?page=dashboard" class="btn <?= $page === 'dashboard' ? 'btn-primary' : 'btn-outline' ?> btn-sm">📊</a>
+                <a href="?page=batches" class="btn <?= $page === 'batches' ? 'btn-primary' : 'btn-outline' ?> btn-sm">🐠</a>
+                <a href="?page=growth" class="btn <?= $page === 'growth' ? 'btn-primary' : 'btn-outline' ?> btn-sm">📈</a>
+                <a href="?page=feed" class="btn <?= $page === 'feed' ? 'btn-primary' : 'btn-outline' ?> btn-sm">🍚</a>
+                <a href="?page=health" class="btn <?= $page === 'health' ? 'btn-primary' : 'btn-outline' ?> btn-sm">💊</a>
+                <a href="?page=accounting" class="btn <?= $page === 'accounting' ? 'btn-primary' : 'btn-outline' ?> btn-sm">💰</a>
+                <a href="?page=analytics" class="btn <?= $page === 'analytics' ? 'btn-primary' : 'btn-outline' ?> btn-sm">📊</a>
                 <?php if (is_admin()): ?>
-                <a href="?page=users" class="btn <?= $page === 'users' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="ইউজার">👥</a>
+                <a href="?page=users" class="btn <?= $page === 'users' ? 'btn-primary' : 'btn-outline' ?> btn-sm">👥</a>
                 <?php endif; ?>
-                <a href="?page=settings" class="btn <?= $page === 'settings' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="সেটিংস">⚙️</a>
+                <a href="?page=settings" class="btn <?= $page === 'settings' ? 'btn-primary' : 'btn-outline' ?> btn-sm">⚙️</a>
             </div>
-            <button class="btn-logout" onclick="if(confirm('লগআউট করবেন?')){window.location='?logout=1'}" title="লগআউট">🚪</button>
+            <button class="btn-logout" onclick="if(confirm('লগআউট করবেন?')){window.location='?logout=1'}">🚪</button>
         </div>
     </div>
 </header>
@@ -1296,7 +1257,7 @@ if ($page === 'dashboard'):
     <div class="pond-info-grid">
         <div class="pond-info-item"><div class="label">আয়তন</div><div class="value"><?= e($settings['pond_area'] ?: '৩০%') ?></div></div>
         <div class="pond-info-item"><div class="label">গভীরতা</div><div class="value"><?= e($settings['pond_depth']) ?></div></div>
-        <div class="pond-info-item"><div class="label">মোট মাছ</div><div class="value"><?= number_format($totalCount) ?></div></div>
+        <div class="pond-info-item"><div class="label">মোট মাছ</div><div class="value"><?= number_format($dashboardTotalCount) ?></div></div>
         <div class="pond-info-item"><div class="label">ওজন</div><div class="value"><?= number_format($dashboardCurrentWeight, 1) ?> কেজি</div></div>
         <div class="pond-info-item"><div class="label">খাদ্য/দিন</div><div class="value"><?= number_format((float)$settings['feed_daily_kg'], 1) ?> কেজি</div></div>
         <div class="pond-info-item"><div class="label">ব্যাচ</div><div class="value"><?= count($batches) ?></div></div>
@@ -1307,7 +1268,7 @@ if ($page === 'dashboard'):
 <div class="kpi-grid">
     <div class="kpi-card touchable" onclick="location='?page=batches'">
         <div class="kpi-label">🐟 জীবিত মাছ</div>
-        <div class="kpi-value"><?= number_format($totalCount) ?></div>
+        <div class="kpi-value"><?= number_format($dashboardTotalCount) ?></div>
     </div>
     <div class="kpi-card touchable" onclick="location='?page=accounting'">
         <div class="kpi-label">⚖️ ওজন</div>
@@ -1452,8 +1413,8 @@ if ($page === 'batches'):
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">🐠 ব্যাচ</h2>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <a class="btn btn-success btn-sm" href="?page=batches&edit=new" title="নতুন ব্যাচ">➕</a>
-            <a class="btn btn-info btn-sm" href="?export=batches" title="CSV এক্সপোর্ট">📥</a>
+            <a class="btn btn-success btn-sm" href="?page=batches&edit=new">➕</a>
+            <a class="btn btn-info btn-sm" href="?export=batches">📥</a>
         </div>
     </div>
 
@@ -1476,7 +1437,7 @@ if ($page === 'batches'):
         <table class="table">
             <thead><tr>
                 <th>ব্যাচ</th><th>মাছ</th><th>স্তর</th><th>তারিখ</th><th>দিন</th>
-                <th>সংখ্যা</th><th>ওজন</th><th>গড়</th><th>কাজ</th>
+                <th>সংখ্যা</th><th>ওজন</th><th>গড়</th><th>সারভাইভাল</th><th>কাজ</th>
             </tr></thead>
             <tbody>
             <?php foreach ($batches_paged as $b): ?>
@@ -1489,20 +1450,21 @@ if ($page === 'batches'):
                 <td><?= number_format((int)$b['current_count']) ?></td>
                 <td><?= number_format((float)$b['current_weight'], 1) ?> kg</td>
                 <td><?= number_format((float)$b['current_avg_weight'], 0) ?> g</td>
+                <td><span class="badge badge-green"><?= number_format((float)$b['survival_rate'], 1) ?>%</span></td>
                 <td>
                     <div class="action-btns">
-                        <a class="btn btn-sm" href="?page=batches&edit=<?= (int)$b['id'] ?>" title="সম্পাদনা">✏️</a>
+                        <a class="btn btn-sm" href="?page=batches&edit=<?= (int)$b['id'] ?>">✏️</a>
                         <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_batch">
                             <input type="hidden" name="id" value="<?= (int)$b['id'] ?>">
-                            <button class="btn btn-danger btn-sm" type="submit" title="মুছুন">🗑️</button>
+                            <button class="btn btn-danger btn-sm" type="submit">🗑️</button>
                         </form>
                     </div>
                 </td>
             </tr>
             <?php endforeach; ?>
-            <?php if (!$batches_paged): ?><tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted)">কোন ব্যাচ নেই</td></tr><?php endif; ?>
+            <?php if (!$batches_paged): ?><tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted)">কোন ব্যাচ নেই</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>
@@ -1557,8 +1519,8 @@ if ($page === 'growth'):
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">📈 Growth</h2>
         <div style="display:flex;gap:6px">
-            <a class="btn btn-success btn-sm" href="#snapshot-form" title="নতুন Snapshot">➕</a>
-            <a class="btn btn-info btn-sm" href="?export=growth_snapshots" title="CSV এক্সপোর্ট">📥</a>
+            <a class="btn btn-success btn-sm" href="#snapshot-form">➕</a>
+            <a class="btn btn-info btn-sm" href="?export=growth_snapshots">📥</a>
         </div>
     </div>
 
@@ -1580,7 +1542,7 @@ if ($page === 'growth'):
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="action" value="delete_snapshot">
                         <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
-                        <button class="btn btn-danger btn-xs" type="submit" title="মুছুন">🗑️</button>
+                        <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
                     </form>
                 </td>
             </tr>
@@ -1616,7 +1578,7 @@ if ($page === 'feed'):
 <section>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">🍚 খাদ্য</h2>
-        <a class="btn btn-info btn-sm" href="?export=feed_logs" title="CSV এক্সপোর্ট">📥</a>
+        <a class="btn btn-info btn-sm" href="?export=feed_logs">📥</a>
     </div>
 
     <?php if ($settings['feed_recipe']): ?>
@@ -1665,7 +1627,7 @@ if ($page === 'feed'):
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_feed">
                             <input type="hidden" name="id" value="<?= (int)$f['id'] ?>">
-                            <button class="btn btn-danger btn-xs" type="submit" title="মুছুন">🗑️</button>
+                            <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
                         </form>
                     </td>
                 </tr>
@@ -1684,7 +1646,7 @@ if ($page === 'health'):
 <section>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">💊 স্বাস্থ্য</h2>
-        <a class="btn btn-info btn-sm" href="?export=health_logs" title="CSV এক্সপোর্ট">📥</a>
+        <a class="btn btn-info btn-sm" href="?export=health_logs">📥</a>
     </div>
 
     <div class="two-col">
@@ -1719,7 +1681,7 @@ if ($page === 'health'):
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_health">
                             <input type="hidden" name="id" value="<?= (int)$h['id'] ?>">
-                            <button class="btn btn-danger btn-xs" type="submit" title="মুছুন">🗑️</button>
+                            <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
                         </form>
                     </td>
                 </tr>
@@ -1738,7 +1700,7 @@ if ($page === 'expenses'):
 <section>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">💰 খরচ</h2>
-        <a class="btn btn-info btn-sm" href="?export=expense_logs" title="CSV এক্সপোর্ট">📥</a>
+        <a class="btn btn-info btn-sm" href="?export=expense_logs">📥</a>
     </div>
 
     <div class="two-col">
@@ -1771,7 +1733,7 @@ if ($page === 'expenses'):
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_expense">
                             <input type="hidden" name="id" value="<?= (int)$exp['id'] ?>">
-                            <button class="btn btn-danger btn-xs" type="submit" title="মুছুন">🗑️</button>
+                            <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
                         </form>
                     </td>
                 </tr>
@@ -1846,7 +1808,7 @@ if ($page === 'analytics'):
             <p style="font-size:13px"><strong>আয়তন:</strong> <?= e($settings['pond_area'] ?: '৩০%') ?></p>
             <p style="font-size:13px"><strong>গভীরতা:</strong> <?= e($settings['pond_depth']) ?></p>
             <p style="font-size:13px"><strong>ওজন:</strong> <?= number_format($dashboardCurrentWeight, 1) ?> kg</p>
-            <p style="font-size:13px"><strong>মাছ:</strong> <?= number_format($totalCount) ?> টি</p>
+            <p style="font-size:13px"><strong>মাছ:</strong> <?= number_format($dashboardTotalCount) ?> টি</p>
             <p style="font-size:13px"><strong>ব্যাচ:</strong> <?= count($batches) ?></p>
             <p style="font-size:13px"><strong>খাদ্য/দিন:</strong> <?= number_format((float)$settings['feed_daily_kg'], 1) ?> kg</p>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
@@ -1909,6 +1871,7 @@ if ($page === 'settings'):
             <div class="field"><label>আয়তন</label><input name="pond_area" value="<?= e($settings['pond_area'] ?: '৩০ শতাংশ') ?>"></div>
             <div class="field"><label>পানির গভীরতা</label><input name="pond_depth" value="<?= e($settings['pond_depth']) ?>"></div>
             <div class="field"><label>মোট ওজন (kg)</label><input type="number" step="0.01" name="total_current_weight" value="<?= e((string)$settings['total_current_weight']) ?>"></div>
+            <div class="field"><label>মোট মাছ (সংখ্যা)</label><input type="number" name="total_current_count" value="<?= e((string)$settings['total_current_count']) ?>"></div>
             <div class="field"><label>বাজার মূল্য (৳/kg)</label><input type="number" step="0.01" name="market_price_per_kg" value="<?= e((string)$settings['market_price_per_kg']) ?>" required></div>
             <div class="field"><label>দৈনিক খাদ্য (kg)</label><input type="number" step="0.1" name="feed_daily_kg" value="<?= e((string)($settings['feed_daily_kg'] ?? 3.5)) ?>"></div>
             <div class="field full-width"><label>🍚 খাদ্য রেসিপি</label><textarea name="feed_recipe" rows="4"><?= e($settings['feed_recipe'] ?? "শুকনো সরিষার খৈল: ১.৫ কেজি\nগমের ভুসি ও কুঁড়া: ১.০ কেজি\nনারিশ ২ মিলি পিলেট ফিড: ১.০ কেজি\nসাধারণ লবণ: এক চিমটি") ?></textarea></div>
@@ -1918,7 +1881,7 @@ if ($page === 'settings'):
             <div class="field"><label>ইমেইল ঠিকানা</label><input type="email" name="notification_email" value="<?= e($settings['notification_email'] ?? '') ?>" placeholder="your@email.com"></div>
             <div class="field full-width" style="display:flex;gap:8px;flex-wrap:wrap">
                 <button class="btn btn-success" type="submit">💾 সংরক্ষণ</button>
-                <a class="btn theme-toggle" href="?action=toggle_dark_mode"><?= $dark_mode ? '☀️ লাইট' : '🌙 ডার্ক' ?></a>
+                <a class="btn" href="?action=toggle_dark_mode"><?= $dark_mode ? '☀️ লাইট' : '🌙 ডার্ক' ?></a>
                 <button class="btn btn-info" type="button" onclick="if(confirm('ব্যাকআপ?')){location='?action=backup'}">💾 ব্যাকআপ</button>
             </div>
         </form>
@@ -1960,7 +1923,7 @@ if ($page === 'settings'):
 <!-- ==================== SCRIPTS ==================== -->
 <script>
 // ====== Dark Mode Toggle ======
-document.querySelector('.theme-toggle')?.addEventListener('click', function(e) {
+document.querySelector('[href*="toggle_dark_mode"]')?.addEventListener('click', function(e) {
     e.preventDefault();
     fetch('?action=toggle_dark_mode', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(() => location.reload());
@@ -2037,7 +2000,7 @@ if ('serviceWorker' in navigator) {
 // ====== Console Info ======
 console.log('🐟 <?= e(APP_NAME) ?> v<?= e(APP_VERSION) ?>');
 console.log('🏡 ৩০ শতাংশ পুকুর | গভীরতা: ১৮-১৯ ফুট');
-console.log('📊 মোট: <?= number_format($totalCount) ?> মাছ | <?= number_format($dashboardCurrentWeight, 1) ?> কেজি');
+console.log('📊 মোট: <?= number_format($dashboardTotalCount) ?> মাছ | <?= number_format($dashboardCurrentWeight, 1) ?> কেজি');
 console.log('🍚 দৈনিক খাদ্য: <?= number_format((float)$settings['feed_daily_kg'], 1) ?> কেজি');
 console.log('📱 সম্পূর্ণ মোবাইল-ফ্রেন্ডলি ডিজাইন');
 console.log('🌙 ডার্ক মোড: <?= $dark_mode ? 'অন' : 'বন্ধ' ?>');
