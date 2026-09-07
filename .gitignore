@@ -1,0 +1,95 @@
+# SQLite Database Files
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# Data Directory (except .gitkeep)
+data/*
+!data/.gitkeep
+
+# System Files
+.DS_Store
+Thumbs.db
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+desktop.ini
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.atom/
+.project
+.settings/
+*.iml
+
+# Log Files
+*.log
+logs/
+error.log
+access.log
+
+# Temporary Files
+*.tmp
+*.temp
+*.cache
+tmp/
+temp/
+
+# Environment Files
+.env
+.env.local
+.env.*.local
+
+# Backup Files
+*.bak
+*.backup
+*.old
+*~
+
+# Composer
+vendor/
+composer.lock
+
+# NPM (if used in future)
+node_modules/
+npm-debug.log
+package-lock.json
+
+# OS Generated Files
+.AppleDouble
+.LSOverride
+._*
+.TemporaryItems
+.VolumeIcon.icns
+
+# PHP Error Logs
+error_log
+php_errors.log
+
+# Deployment Files
+.htaccess.bak
+config.php.example
+
+# Docker
+.dockerignore
+
+# Git
+.git/
+.gitmodules
+
+# IDE Specific
+.editorconfig
+.gitattributes
+
+# Testing
+coverage/
+.phpunit.result.cache
+phpunit.log
