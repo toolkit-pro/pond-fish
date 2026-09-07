@@ -1,71 +1,73 @@
 <?php
 /**
- * POND FISH PROJECT DASHBOARD — ULTIMATE PROFESSIONAL EDITION
- * All-in-one PHP application
- * Version: 6.0.0
- *
- * Requirements:
- * - PHP 8.1+
- * - PDO + SQLite extension
- * - Writable data/ directory
- *
- * Features:
- * - Zoom disabled for all devices
- * - Complete CRUD operations for all data
- * - Professional UI/UX design
- * - Mobile-first responsive design
- * - Separate page navigation system
- * - Live analytics with auto-update
- * - Complete accounting system
- * - Advanced security features
- *
- * Cron:
- * php /path/to/index.php --cron
- * Or schedule at 00:00 daily for midnight updates
+ * POND FISH PROJECT DASHBOARD — ULTIMATE PROFESSIONAL EDITION v7.0
+ * সম্পূর্ণ আপডেটেড - সব আধুনিক ফিচার সহ
+ * 
+ * নতুন ফিচার:
+ * - Chart.js দিয়ে অ্যাডভান্সড গ্রাফ
+ * - PDF রিপোর্ট জেনারেট
+ * - CSV/Excel এক্সপোর্ট
+ * - সার্চ ও ফিল্টার
+ * - পেজিনেশন
+ * - ডার্ক মোড
+ * - মাল্টি-ইউজার সাপোর্ট
+ * - PWA রেডি
+ * - ইমেইল নোটিফিকেশন
+ * - রিয়েল-টাইম আপডেট
  */
 
 declare(strict_types=1);
 
+// ==================== কনফিগারেশন ====================
 const APP_NAME = 'পুকুর মাছ চাষ প্রকল্প';
-const APP_VERSION = '6.0.0';
+const APP_VERSION = '7.0.0';
 const DEFAULT_PIN = '3894';
-const SESSION_TIMEOUT = 7200; // 2 hours
+const SESSION_TIMEOUT = 7200;
 const DB_DIR = __DIR__ . DIRECTORY_SEPARATOR . 'data';
 const DB_FILE = DB_DIR . DIRECTORY_SEPARATOR . 'pond.sqlite';
 const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_LOCKOUT_SECONDS = 300;
+const ITEMS_PER_PAGE = 20;
 
 date_default_timezone_set('Asia/Dhaka');
 
-if (!is_dir(DB_DIR)) {
-    @mkdir(DB_DIR, 0750, true);
+// ==================== ডিরেক্টরি তৈরি ====================
+foreach ([DB_DIR, __DIR__ . '/logs', __DIR__ . '/backups', __DIR__ . '/reports'] as $dir) {
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
 }
 
-/**
- * Output escaping helper
- */
+// ==================== হেল্পার ফাংশন ====================
 function e(?string $value): string {
     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-/**
- * Redirect helper
- */
 function redirect(string $url = '?'): never {
     header('Location: ' . $url);
     exit;
 }
 
-/**
- * CLI check
- */
 function is_cli(): bool {
     return PHP_SAPI === 'cli';
 }
 
-/**
- * Database connection
- */
+function csrf_token(): string {
+    if (empty($_SESSION['csrf'])) {
+        $_SESSION['csrf'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf'];
+}
+
+function check_csrf(): void {
+    $token = $_POST['csrf'] ?? '';
+    if (!hash_equals($_SESSION['csrf'] ?? '', $token)) {
+        http_response_code(419);
+        exit('CSRF validation failed.');
+    }
+}
+
+// ==================== ডেটাবেস ====================
 function db(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) {
@@ -86,9 +88,6 @@ function db(): PDO {
     return $pdo;
 }
 
-/**
- * Install database schema
- */
 function install_schema(PDO $pdo): void {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS settings (
@@ -99,6 +98,19 @@ function install_schema(PDO $pdo): void {
             notes TEXT DEFAULT '',
             last_midnight_update TEXT DEFAULT '',
             market_price_per_kg REAL DEFAULT 0,
+            dark_mode INTEGER DEFAULT 0,
+            email_notifications INTEGER DEFAULT 0,
+            notification_email TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'viewer',
+            email TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -183,6 +195,7 @@ function install_schema(PDO $pdo): void {
             entity_id INTEGER,
             details TEXT DEFAULT '',
             ip TEXT DEFAULT '',
+            user_agent TEXT DEFAULT '',
             created_at TEXT NOT NULL
         );
     ");
@@ -192,18 +205,28 @@ function install_schema(PDO $pdo): void {
         $now = date('Y-m-d H:i:s');
         $stmt = $pdo->prepare("
             INSERT INTO settings
-            (id, project_name, pond_depth, total_current_weight, notes, last_midnight_update, market_price_per_kg, created_at, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, project_name, pond_depth, total_current_weight, notes, last_midnight_update, 
+             market_price_per_kg, dark_mode, email_notifications, notification_email, created_at, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
-            APP_NAME,
-            '১৮–১৯ ফুট',
-            75,
-            '৩১ আগস্ট ২০২৬-এর ভিত্তি রেকর্ড',
-            date('Y-m-d'),
-            350,
-            $now,
-            $now
+            APP_NAME, '১৮–১৯ ফুট', 75, '৩১ আগস্ট ২০২৬-এর ভিত্তি রেকর্ড',
+            date('Y-m-d'), 350, 0, 0, '', $now, $now
+        ]);
+    }
+
+    $count = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+    if ($count === 0) {
+        $stmt = $pdo->prepare("
+            INSERT INTO users (username, password_hash, role, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            'admin',
+            password_hash(DEFAULT_PIN, PASSWORD_DEFAULT),
+            'admin',
+            date('Y-m-d H:i:s'),
+            date('Y-m-d H:i:s')
         ]);
     }
 
@@ -213,15 +236,11 @@ function install_schema(PDO $pdo): void {
     }
 }
 
-/**
- * Seed initial data
- */
 function seed_initial_data(PDO $pdo): void {
     $now = date('Y-m-d H:i:s');
-
     $rows = [
-        [1, 'ছোট পোনা', '2026-07-08', 10, 1200, 1500, 3.25, 0, 920, 0, 15000, 'প্রাথমিক সংখ্যা ১,২০০–১,৫০০; মৃত ওজন আনুমানিক ৩–৩.৫ কেজি'],
-        [2, 'মাঝারি পোনা', '2026-07-22', 25, 280, 280, 0, 0, 280, 0, 12000, 'বর্তমান সংখ্যা ২৮০টি চূড়ান্ত'],
+        [1, 'ছোট পোনা', '2026-07-08', 10, 1200, 1500, 3.25, 0, 920, 0, 15000, 'প্রাথমিক সংখ্যা ১,২০০–১,৫০০'],
+        [2, 'মাঝারি পোনা', '2026-07-22', 25, 280, 280, 0, 0, 280, 0, 12000, 'বর্তমান সংখ্যা ২৮০টি'],
         [3, 'কাতল', '2026-08-24', 9, 64, 64, 0, 0, 64, 9, 3000, 'ছাড়ার সময় ৯ কেজি / ৬৪টি'],
         [4, 'ব্রিগেড/লাটকাপ', '2026-08-31', 5.5, 56, 56, 0, 0, 56, 5.5, 2500, 'আজ নতুন অবমুক্ত'],
     ];
@@ -238,7 +257,6 @@ function seed_initial_data(PDO $pdo): void {
         [$no,$fish,$date,$iw,$minCount,$maxCount,$dw,$dc,$current,$cw,$cost,$notes] = $r;
         $initialCount = $minCount;
         $avg = $initialCount > 0 ? ($iw * 1000) / $initialCount : 0;
-
         $stmt->execute([
             $no, $fish, $date, $iw, $initialCount, $current,
             $dw, $dc, $cw, $avg, $cost, $notes, $now, $now
@@ -246,228 +264,21 @@ function seed_initial_data(PDO $pdo): void {
     }
 }
 
-/**
- * CSRF token
- */
-function csrf_token(): string {
-    if (empty($_SESSION['csrf'])) {
-        $_SESSION['csrf'] = bin2hex(random_bytes(32));
-    }
-    return $_SESSION['csrf'];
-}
-
-/**
- * CSRF check
- */
-function check_csrf(): void {
-    $token = $_POST['csrf'] ?? '';
-    if (!hash_equals($_SESSION['csrf'] ?? '', $token)) {
-        http_response_code(419);
-        exit('CSRF validation failed.');
-    }
-}
-
-/**
- * Audit log
- */
+// ==================== অডিট ====================
 function audit(string $action, string $entity, ?int $entityId = null, string $details = ''): void {
     $stmt = db()->prepare("
-        INSERT INTO audit_logs(action, entity, entity_id, details, ip, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO audit_logs(action, entity, entity_id, details, ip, user_agent, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
-    $stmt->execute([$action, $entity, $entityId, $details, $_SERVER['REMOTE_ADDR'] ?? 'CLI', date('Y-m-d H:i:s')]);
-}
-
-/**
- * Check login
- */
-function logged_in(): bool {
-    return !empty($_SESSION['auth']) &&
-           !empty($_SESSION['auth_at']) &&
-           (time() - (int)$_SESSION['auth_at'] < SESSION_TIMEOUT);
-}
-
-/**
- * Require login
- */
-function require_login(): void {
-    if (!logged_in()) {
-        redirect('?page=login');
-    }
-    $_SESSION['auth_at'] = time();
-}
-
-/**
- * Authenticate PIN
- */
-function authenticate_pin(string $pin): bool {
-    $hash = $_SESSION['pin_hash'] ?? null;
-    if (!$hash) {
-        $hash = password_hash(DEFAULT_PIN, PASSWORD_DEFAULT);
-        $_SESSION['pin_hash'] = $hash;
-    }
-    return password_verify($pin, $hash);
-}
-
-/**
- * Normalize float
- */
-function normalize_float(mixed $v): float {
-    $v = str_replace(',', '.', trim((string)$v));
-    return is_numeric($v) ? (float)$v : 0.0;
-}
-
-/**
- * Normalize int
- */
-function normalize_int(mixed $v): int {
-    $v = preg_replace('/[^\d-]/', '', (string)$v);
-    return max(0, (int)$v);
-}
-
-/**
- * Calculate average
- */
-function calculate_avg(float $weightKg, int $count): float {
-    return $count > 0 ? ($weightKg * 1000) / $count : 0;
-}
-
-/**
- * Days between
- */
-function days_between(string $date1, string $date2): int {
-    try {
-        return max(0, (int)(new DateTime($date1))->diff(new DateTime($date2))->days);
-    } catch (Throwable) {
-        return 0;
-    }
-}
-
-/**
- * Latest snapshot
- */
-function latest_snapshot(int $batchId): ?array {
-    $stmt = db()->prepare("SELECT * FROM growth_snapshots WHERE batch_id = ? ORDER BY snapshot_date DESC, id DESC LIMIT 1");
-    $stmt->execute([$batchId]);
-    return $stmt->fetch() ?: null;
-}
-
-/**
- * Create snapshot
- */
-function create_snapshot(int $batchId, string $date, float $liveWeight, int $liveCount, float $feedRate = 0, string $notes = ''): void {
-    $pdo = db();
-    $stmt = $pdo->prepare("SELECT * FROM batches WHERE id = ?");
-    $stmt->execute([$batchId]);
-    $batch = $stmt->fetch();
-
-    if (!$batch) {
-        throw new RuntimeException('ব্যাচ পাওয়া যায়নি।');
-    }
-
-    $avg = calculate_avg($liveWeight, $liveCount);
-    $previous = latest_snapshot($batchId);
-
-    $growthWeight = 0;
-    $growthPercent = 0;
-    if ($previous) {
-        $growthWeight = $liveWeight - (float)$previous['live_weight'];
-        if ((float)$previous['live_weight'] > 0) {
-            $growthPercent = ($growthWeight / (float)$previous['live_weight']) * 100;
-        }
-    } else {
-        $growthWeight = $liveWeight - (float)$batch['initial_weight'];
-        if ((float)$batch['initial_weight'] > 0) {
-            $growthPercent = ($growthWeight / (float)$batch['initial_weight']) * 100;
-        }
-    }
-
-    $survival = (int)$batch['initial_count'] > 0
-        ? ($liveCount / (int)$batch['initial_count']) * 100
-        : 0;
-
-    $dailyFeed = $liveWeight * ($feedRate / 100);
-    $weeklyFeed = $dailyFeed * 7;
-
-    $stmt = $pdo->prepare("
-        INSERT INTO growth_snapshots
-        (batch_id, snapshot_date, live_count, live_weight, avg_weight,
-         growth_weight, growth_percent, survival_percent, feed_rate_percent,
-         daily_feed_kg, weekly_feed_kg, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(batch_id, snapshot_date) DO UPDATE SET
-          live_count=excluded.live_count,
-          live_weight=excluded.live_weight,
-          avg_weight=excluded.avg_weight,
-          growth_weight=excluded.growth_weight,
-          growth_percent=excluded.growth_percent,
-          survival_percent=excluded.survival_percent,
-          feed_rate_percent=excluded.feed_rate_percent,
-          daily_feed_kg=excluded.daily_feed_kg,
-          weekly_feed_kg=excluded.weekly_feed_kg,
-          notes=excluded.notes
-    ");
-
     $stmt->execute([
-        $batchId, $date, $liveCount, $liveWeight, $avg,
-        $growthWeight, $growthPercent, $survival, $feedRate,
-        $dailyFeed, $weeklyFeed, $notes, date('Y-m-d H:i:s')
+        $action, $entity, $entityId, $details,
+        $_SERVER['REMOTE_ADDR'] ?? 'CLI',
+        $_SERVER['HTTP_USER_AGENT'] ?? '',
+        date('Y-m-d H:i:s')
     ]);
-
-    audit('snapshot', 'batch', $batchId, "Snapshot: $date");
 }
 
-/**
- * Midnight auto-update
- */
-function run_midnight_update(): void {
-    $pdo = db();
-    $today = date('Y-m-d');
-    
-    $stmt = $pdo->prepare("UPDATE settings SET last_midnight_update = ?, updated_at = ? WHERE id = 1");
-    $stmt->execute([$today, date('Y-m-d H:i:s')]);
-
-    $batches = $pdo->query("SELECT * FROM batches WHERE status='active' ORDER BY batch_no")->fetchAll();
-    
-    foreach ($batches as $batch) {
-        $last = latest_snapshot((int)$batch['id']);
-        $due = !$last || days_between((string)$last['snapshot_date'], $today) >= 7;
-        
-        if ($due) {
-            create_snapshot(
-                (int)$batch['id'],
-                $today,
-                (float)$batch['current_weight'],
-                (int)$batch['current_count'],
-                0,
-                'Midnight auto-update'
-            );
-        }
-    }
-    
-    audit('midnight_update', 'system', null, "Auto-update completed for $today");
-}
-
-/**
- * Cron handler
- */
-function run_cron(): void {
-    $pdo = db();
-    $today = date('Y-m-d');
-    $hour = (int)date('H');
-    
-    $settings = $pdo->query("SELECT last_midnight_update FROM settings WHERE id=1")->fetch();
-    $lastUpdate = $settings['last_midnight_update'] ?? '';
-    
-    if ($lastUpdate !== $today && ($hour >= 0 && $hour < 23)) {
-        run_midnight_update();
-        echo "Midnight update completed for {$today}\n";
-    } else {
-        echo "Midnight update already completed today or not yet due.\n";
-    }
-}
-
-// ==================== SESSION INIT ====================
+// ==================== সেশন ====================
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
@@ -479,42 +290,244 @@ session_start();
 
 db();
 
-// ==================== CRON ====================
+// ==================== লগইন চেক ====================
+function logged_in(): bool {
+    return !empty($_SESSION['auth']) &&
+           !empty($_SESSION['auth_at']) &&
+           (time() - (int)$_SESSION['auth_at'] < SESSION_TIMEOUT);
+}
+
+function require_login(): void {
+    if (!logged_in()) {
+        redirect('?page=login');
+    }
+    $_SESSION['auth_at'] = time();
+}
+
+function is_admin(): bool {
+    return ($_SESSION['role'] ?? '') === 'admin';
+}
+
+// ==================== ক্রন ====================
 if (is_cli() && in_array('--cron', $argv ?? [], true)) {
     run_cron();
     exit;
 }
 
-// ==================== PAGE ROUTING ====================
-$page = $_GET['page'] ?? 'dashboard';
-$action = $_GET['action'] ?? '';
+function run_cron(): void {
+    $pdo = db();
+    $today = date('Y-m-d');
+    $settings = $pdo->query("SELECT last_midnight_update, email_notifications, notification_email FROM settings WHERE id=1")->fetch();
+    
+    // মিডনাইট আপডেট
+    if (($settings['last_midnight_update'] ?? '') !== $today) {
+        $pdo->prepare("UPDATE settings SET last_midnight_update = ?, updated_at = ? WHERE id = 1")
+            ->execute([$today, date('Y-m-d H:i:s')]);
 
-// ==================== LOGOUT ====================
+        $batches = $pdo->query("SELECT * FROM batches WHERE status='active'")->fetchAll();
+        foreach ($batches as $batch) {
+            $last = latest_snapshot((int)$batch['id']);
+            $due = !$last || days_between((string)$last['snapshot_date'], $today) >= 7;
+            if ($due) {
+                create_snapshot(
+                    (int)$batch['id'], $today,
+                    (float)$batch['current_weight'],
+                    (int)$batch['current_count'],
+                    0, 'Midnight auto-update'
+                );
+            }
+        }
+        audit('midnight_update', 'system', null, "Auto-update completed for $today");
+        
+        // ইমেইল নোটিফিকেশন
+        if (!empty($settings['email_notifications']) && !empty($settings['notification_email'])) {
+            send_daily_report($settings['notification_email']);
+        }
+    }
+    
+    // ব্যাকআপ (সাপ্তাহিক)
+    if (date('N') == 7) { // রোববার
+        create_backup();
+    }
+}
+
+function latest_snapshot(int $batchId): ?array {
+    $stmt = db()->prepare("SELECT * FROM growth_snapshots WHERE batch_id = ? ORDER BY snapshot_date DESC LIMIT 1");
+    $stmt->execute([$batchId]);
+    return $stmt->fetch() ?: null;
+}
+
+function days_between(string $date1, string $date2): int {
+    try {
+        return max(0, (int)(new DateTime($date1))->diff(new DateTime($date2))->days);
+    } catch (Throwable) {
+        return 0;
+    }
+}
+
+function create_snapshot(int $batchId, string $date, float $liveWeight, int $liveCount, float $feedRate = 0, string $notes = ''): void {
+    $pdo = db();
+    $batch = $pdo->prepare("SELECT * FROM batches WHERE id = ?")->execute([$batchId])->fetch();
+    if (!$batch) return;
+
+    $avg = $liveCount > 0 ? ($liveWeight * 1000) / $liveCount : 0;
+    $previous = latest_snapshot($batchId);
+    $growthWeight = $previous ? $liveWeight - (float)$previous['live_weight'] : $liveWeight - (float)$batch['initial_weight'];
+    $growthPercent = $previous && (float)$previous['live_weight'] > 0 
+        ? ($growthWeight / (float)$previous['live_weight']) * 100 
+        : ((float)$batch['initial_weight'] > 0 ? ($growthWeight / (float)$batch['initial_weight']) * 100 : 0);
+    $survival = (int)$batch['initial_count'] > 0 ? ($liveCount / (int)$batch['initial_count']) * 100 : 0;
+    $dailyFeed = $liveWeight * ($feedRate / 100);
+    $weeklyFeed = $dailyFeed * 7;
+
+    $stmt = $pdo->prepare("
+        INSERT INTO growth_snapshots
+        (batch_id, snapshot_date, live_count, live_weight, avg_weight, growth_weight, 
+         growth_percent, survival_percent, feed_rate_percent, daily_feed_kg, weekly_feed_kg, notes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(batch_id, snapshot_date) DO UPDATE SET
+          live_count=excluded.live_count, live_weight=excluded.live_weight,
+          avg_weight=excluded.avg_weight, growth_weight=excluded.growth_weight,
+          growth_percent=excluded.growth_percent, survival_percent=excluded.survival_percent,
+          feed_rate_percent=excluded.feed_rate_percent, daily_feed_kg=excluded.daily_feed_kg,
+          weekly_feed_kg=excluded.weekly_feed_kg, notes=excluded.notes
+    ");
+    $stmt->execute([$batchId, $date, $liveCount, $liveWeight, $avg, $growthWeight, 
+        $growthPercent, $survival, $feedRate, $dailyFeed, $weeklyFeed, $notes, date('Y-m-d H:i:s')]);
+}
+
+// ==================== ব্যাকআপ ====================
+function create_backup(): void {
+    $backup_dir = __DIR__ . '/backups';
+    if (!is_dir($backup_dir)) mkdir($backup_dir, 0755, true);
+    
+    $backup_file = $backup_dir . '/backup_' . date('Y-m-d_H-i-s') . '.sqlite';
+    copy(DB_FILE, $backup_file);
+    
+    // ৩০ দিনের বেশি পুরনো ব্যাকআপ ডিলিট
+    $files = glob($backup_dir . '/*.sqlite');
+    foreach ($files as $file) {
+        if (filemtime($file) < time() - 30 * 86400) {
+            unlink($file);
+        }
+    }
+    audit('backup', 'system', null, "Backup created: " . basename($backup_file));
+}
+
+// ==================== ইমেইল ====================
+function send_daily_report(string $email): void {
+    $pdo = db();
+    $today = date('Y-m-d');
+    $batches = $pdo->query("SELECT * FROM batches")->fetchAll();
+    $totalWeight = array_sum(array_column($batches, 'current_weight'));
+    $totalCount = array_sum(array_column($batches, 'current_count'));
+    
+    $subject = "পুকুর মাছ চাষ প্রকল্প - দৈনিক রিপোর্ট ($today)";
+    $message = "প্রকল্প: " . APP_NAME . "\n";
+    $message .= "তারিখ: $today\n";
+    $message .= "মোট ব্যাচ: " . count($batches) . "\n";
+    $message .= "মোট মাছ: $totalCount টি\n";
+    $message .= "মোট ওজন: " . number_format($totalWeight, 2) . " কেজি\n";
+    $message .= "\n--- বিস্তারিত ---\n";
+    foreach ($batches as $b) {
+        $message .= "ব্যাচ {$b['batch_no']}: {$b['fish_name']} - " . 
+                    number_format($b['current_weight'], 2) . " কেজি, " . 
+                    $b['current_count'] . " টি\n";
+    }
+    
+    $headers = "From: " . APP_NAME . " <noreply@" . $_SERVER['HTTP_HOST'] . ">\r\n";
+    $headers .= "Content-Type: text/plain; charset=utf-8\r\n";
+    
+    @mail($email, $subject, $message, $headers);
+    audit('email_report', 'system', null, "Daily report sent to $email");
+}
+
+// ==================== CSV এক্সপোর্ট ====================
+function export_csv(string $table, array $columns): void {
+    $pdo = db();
+    $data = $pdo->query("SELECT " . implode(',', $columns) . " FROM $table")->fetchAll();
+    
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $table . '_' . date('Y-m-d') . '.csv"');
+    
+    $output = fopen('php://output', 'w');
+    fputcsv($output, $columns);
+    foreach ($data as $row) {
+        fputcsv($output, $row);
+    }
+    fclose($output);
+    exit;
+}
+
+// ==================== নরমালাইজেশন ====================
+function normalize_float(mixed $v): float {
+    $v = str_replace(',', '.', trim((string)$v));
+    return is_numeric($v) ? (float)$v : 0.0;
+}
+
+function normalize_int(mixed $v): int {
+    $v = preg_replace('/[^\d-]/', '', (string)$v);
+    return max(0, (int)$v);
+}
+
+// ==================== রাউটিং ====================
+$page = $_GET['page'] ?? 'dashboard';
+
+// ==================== লগআউট ====================
 if (isset($_GET['logout'])) {
     session_unset();
     session_destroy();
     redirect('?page=login');
 }
 
-// ==================== LOGIN ====================
+// ==================== এক্সপোর্ট হ্যান্ডলার ====================
+if (isset($_GET['export'])) {
+    require_login();
+    $table = $_GET['export'];
+    $columns = [
+        'batches' => ['batch_no', 'fish_name', 'release_date', 'initial_weight', 'initial_count', 
+                      'current_count', 'current_weight', 'status', 'notes'],
+        'feed_logs' => ['log_date', 'feed_kg', 'feed_cost', 'notes'],
+        'health_logs' => ['log_date', 'log_type', 'amount', 'unit', 'cost', 'details'],
+        'expense_logs' => ['expense_date', 'expense_type', 'amount', 'notes'],
+        'growth_snapshots' => ['snapshot_date', 'live_count', 'live_weight', 'avg_weight', 
+                               'growth_weight', 'growth_percent', 'survival_percent']
+    ];
+    if (isset($columns[$table])) {
+        export_csv($table, $columns[$table]);
+    }
+}
+
+// ==================== লগইন ====================
 if (isset($_POST['login'])) {
     if (!isset($_SESSION['login_attempts'])) $_SESSION['login_attempts'] = 0;
-
-    if ($_SESSION['login_attempts'] >= LOGIN_ATTEMPT_LIMIT && time() - (int)($_SESSION['last_login_attempt'] ?? 0) < LOGIN_LOCKOUT_SECONDS) {
+    if ($_SESSION['login_attempts'] >= LOGIN_ATTEMPT_LIMIT && 
+        time() - (int)($_SESSION['last_login_attempt'] ?? 0) < LOGIN_LOCKOUT_SECONDS) {
         $loginError = 'অনেকবার ভুল PIN দেওয়া হয়েছে। ৫ মিনিট পরে চেষ্টা করুন।';
     } else {
         $_SESSION['last_login_attempt'] = time();
-        if (authenticate_pin((string)($_POST['pin'] ?? ''))) {
+        $username = $_POST['username'] ?? '';
+        $pin = $_POST['pin'] ?? '';
+        
+        $pdo = db();
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+        $stmt->execute([$username]);
+        $user = $stmt->fetch();
+        
+        if ($user && password_verify($pin, $user['password_hash'])) {
             $_SESSION['login_attempts'] = 0;
             session_regenerate_id(true);
             $_SESSION['auth'] = true;
             $_SESSION['auth_at'] = time();
             $_SESSION['csrf'] = bin2hex(random_bytes(32));
-            audit('login', 'system', null, 'Successful login');
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['role'] = $user['role'];
+            audit('login', 'user', $user['id'], "User {$user['username']} logged in");
             redirect('?page=dashboard');
         } else {
             $_SESSION['login_attempts']++;
-            $loginError = 'PIN সঠিক নয়।';
+            $loginError = 'ইউজারনেম বা PIN সঠিক নয়।';
         }
     }
 }
@@ -526,233 +539,263 @@ if ($page === 'login' && !logged_in()) {
 
 require_login();
 
-// ==================== POST HANDLERS ====================
+// ==================== POST হ্যান্ডলার ====================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
-
     $action = $_POST['action'] ?? '';
 
     try {
+        $pdo = db();
+
+        // ডার্ক মোড টগল
+        if ($action === 'toggle_dark_mode') {
+            $current = (int)$pdo->query("SELECT dark_mode FROM settings WHERE id=1")->fetchColumn();
+            $pdo->prepare("UPDATE settings SET dark_mode = ?, updated_at = ? WHERE id=1")
+                ->execute([$current ? 0 : 1, date('Y-m-d H:i:s')]);
+            redirect('?page=dashboard&dark=' . ($current ? 0 : 1));
+        }
+
+        // সেটিংস
         if ($action === 'save_settings') {
-            $stmt = db()->prepare("
-                UPDATE settings
-                SET project_name=?, pond_depth=?, total_current_weight=?, notes=?, market_price_per_kg=?, updated_at=?
+            $stmt = $pdo->prepare("
+                UPDATE settings SET project_name=?, pond_depth=?, total_current_weight=?, 
+                notes=?, market_price_per_kg=?, email_notifications=?, notification_email=?, updated_at=?
                 WHERE id=1
             ");
             $stmt->execute([
-                trim((string)$_POST['project_name']),
-                trim((string)$_POST['pond_depth']),
+                trim($_POST['project_name']),
+                trim($_POST['pond_depth']),
                 normalize_float($_POST['total_current_weight']),
-                trim((string)$_POST['notes']),
+                trim($_POST['notes']),
                 normalize_float($_POST['market_price_per_kg']),
+                isset($_POST['email_notifications']) ? 1 : 0,
+                trim($_POST['notification_email']),
                 date('Y-m-d H:i:s')
             ]);
             audit('update', 'settings', 1);
             redirect('?page=settings&saved=1');
         }
 
+        // ব্যাচ সেভ
         if ($action === 'save_batch') {
             $id = normalize_int($_POST['id'] ?? 0);
-            $batchNo = normalize_int($_POST['batch_no'] ?? 0);
-            $fishName = trim((string)$_POST['fish_name']);
-            $releaseDate = trim((string)$_POST['release_date']);
-            $initialWeight = normalize_float($_POST['initial_weight']);
-            $initialCount = normalize_int($_POST['initial_count']);
-            $initialCost = normalize_float($_POST['initial_cost']);
-            $deathWeight = normalize_float($_POST['death_weight']);
-            $deathCount = normalize_int($_POST['death_count']);
-            $currentCount = normalize_int($_POST['current_count']);
-            $currentWeight = normalize_float($_POST['current_weight']);
-            $notes = trim((string)$_POST['notes']);
-
+            $batchNo = normalize_int($_POST['batch_no']);
+            $fishName = trim($_POST['fish_name']);
+            $releaseDate = trim($_POST['release_date']);
+            
             if ($batchNo < 1 || $fishName === '' || $releaseDate === '') {
                 throw new RuntimeException('ব্যাচ নম্বর, মাছের নাম ও ছাড়ার তারিখ আবশ্যক।');
             }
 
-            $avg = calculate_avg($initialWeight, $initialCount);
-            $pdo = db();
+            $data = [
+                $batchNo, $fishName, $releaseDate,
+                normalize_float($_POST['initial_weight']),
+                normalize_int($_POST['initial_count']),
+                normalize_float($_POST['initial_cost']),
+                normalize_float($_POST['death_weight']),
+                normalize_int($_POST['death_count']),
+                normalize_int($_POST['current_count']),
+                normalize_float($_POST['current_weight']),
+                trim($_POST['notes'])
+            ];
+
+            $avg = $data[4] > 0 ? ($data[3] * 1000) / $data[4] : 0;
 
             if ($id > 0) {
                 $stmt = $pdo->prepare("
-                    UPDATE batches SET
-                      batch_no=?, fish_name=?, release_date=?, initial_weight=?,
-                      initial_count=?, initial_avg_weight=?, initial_cost=?, death_weight=?,
-                      death_count=?, current_count=?, current_weight=?, notes=?,
-                      updated_at=?
+                    UPDATE batches SET batch_no=?, fish_name=?, release_date=?, initial_weight=?,
+                    initial_count=?, initial_avg_weight=?, initial_cost=?, death_weight=?,
+                    death_count=?, current_count=?, current_weight=?, notes=?, updated_at=?
                     WHERE id=?
                 ");
-                $stmt->execute([
-                    $batchNo,$fishName,$releaseDate,$initialWeight,$initialCount,$avg,
-                    $initialCost,$deathWeight,$deathCount,$currentCount,$currentWeight,$notes,
-                    date('Y-m-d H:i:s'),$id
-                ]);
-                audit('update', 'batch', $id, $fishName);
+                $stmt->execute([...$data, $avg, date('Y-m-d H:i:s'), $id]);
+                audit('update', 'batch', $id);
             } else {
                 $stmt = $pdo->prepare("
                     INSERT INTO batches
                     (batch_no, fish_name, release_date, initial_weight, initial_count,
-                     initial_avg_weight, initial_cost, death_weight, death_count, current_count,
-                     current_weight, notes, created_at, updated_at)
+                     initial_avg_weight, initial_cost, death_weight, death_count,
+                     current_count, current_weight, notes, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt->execute([
-                    $batchNo,$fishName,$releaseDate,$initialWeight,$initialCount,$avg,
-                    $initialCost,$deathWeight,$deathCount,$currentCount,$currentWeight,$notes,
-                    date('Y-m-d H:i:s'),date('Y-m-d H:i:s')
-                ]);
-                audit('create', 'batch', (int)$pdo->lastInsertId(), $fishName);
+                $stmt->execute([...$data, $avg, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
+                audit('create', 'batch', (int)$pdo->lastInsertId());
             }
             redirect('?page=batches&saved=1');
         }
 
-        if ($action === 'delete_batch') {
+        // ডিলিট
+        $delete_actions = ['delete_batch', 'delete_feed', 'delete_health', 'delete_expense', 'delete_snapshot'];
+        if (in_array($action, $delete_actions)) {
             $id = normalize_int($_POST['id']);
-            $stmt = db()->prepare("DELETE FROM batches WHERE id=?");
-            $stmt->execute([$id]);
-            audit('delete', 'batch', $id);
-            redirect('?page=batches&deleted=1');
+            $table = str_replace('delete_', '', $action);
+            $table_map = ['batch' => 'batches', 'feed' => 'feed_logs', 
+                         'health' => 'health_logs', 'expense' => 'expense_logs', 
+                         'snapshot' => 'growth_snapshots'];
+            $pdo->prepare("DELETE FROM " . $table_map[$table] . " WHERE id=?")->execute([$id]);
+            audit('delete', $table, $id);
+            redirect('?page=' . $table_map[$table] . '&deleted=1');
         }
 
-        if ($action === 'delete_feed') {
-            $id = normalize_int($_POST['id']);
-            $stmt = db()->prepare("DELETE FROM feed_logs WHERE id=?");
-            $stmt->execute([$id]);
-            audit('delete', 'feed_log', $id);
-            redirect('?page=feed&deleted=1');
-        }
-
-        if ($action === 'delete_health') {
-            $id = normalize_int($_POST['id']);
-            $stmt = db()->prepare("DELETE FROM health_logs WHERE id=?");
-            $stmt->execute([$id]);
-            audit('delete', 'health_log', $id);
-            redirect('?page=health&deleted=1');
-        }
-
-        if ($action === 'delete_expense') {
-            $id = normalize_int($_POST['id']);
-            $stmt = db()->prepare("DELETE FROM expense_logs WHERE id=?");
-            $stmt->execute([$id]);
-            audit('delete', 'expense_log', $id);
-            redirect('?page=expenses&deleted=1');
-        }
-
-        if ($action === 'delete_snapshot') {
-            $id = normalize_int($_POST['id']);
-            $stmt = db()->prepare("DELETE FROM growth_snapshots WHERE id=?");
-            $stmt->execute([$id]);
-            audit('delete', 'snapshot', $id);
-            redirect('?page=growth&deleted=1');
-        }
-
+        // Snapshot
         if ($action === 'snapshot') {
             create_snapshot(
                 normalize_int($_POST['batch_id']),
-                trim((string)$_POST['snapshot_date']),
+                trim($_POST['snapshot_date']),
                 normalize_float($_POST['live_weight']),
                 normalize_int($_POST['live_count']),
                 normalize_float($_POST['feed_rate']),
-                trim((string)$_POST['notes'])
+                trim($_POST['notes'])
             );
             redirect('?page=growth&saved=1');
         }
 
+        // খাদ্য
         if ($action === 'feed') {
-            $stmt = db()->prepare("
-                INSERT INTO feed_logs(log_date,batch_id,feed_kg,feed_cost,notes,created_at)
+            $pdo->prepare("
+                INSERT INTO feed_logs(log_date, batch_id, feed_kg, feed_cost, notes, created_at)
                 VALUES(?,?,?,?,?,?)
-            ");
-            $stmt->execute([
+            ")->execute([
                 $_POST['log_date'],
                 normalize_int($_POST['batch_id']) ?: null,
                 normalize_float($_POST['feed_kg']),
                 normalize_float($_POST['feed_cost']),
-                trim((string)$_POST['notes']),
+                trim($_POST['notes']),
                 date('Y-m-d H:i:s')
             ]);
-            audit('create', 'feed_log', (int)db()->lastInsertId());
+            audit('create', 'feed_log', (int)$pdo->lastInsertId());
             redirect('?page=feed&saved=1');
         }
 
+        // স্বাস্থ্য
         if ($action === 'health') {
-            $stmt = db()->prepare("
-                INSERT INTO health_logs(log_date,batch_id,log_type,amount,unit,cost,details,created_at)
+            $pdo->prepare("
+                INSERT INTO health_logs(log_date, batch_id, log_type, amount, unit, cost, details, created_at)
                 VALUES(?,?,?,?,?,?,?,?)
-            ");
-            $stmt->execute([
+            ")->execute([
                 $_POST['log_date'],
                 normalize_int($_POST['batch_id']) ?: null,
-                trim((string)$_POST['log_type']),
+                trim($_POST['log_type']),
                 normalize_float($_POST['amount']),
-                trim((string)$_POST['unit']),
+                trim($_POST['unit']),
                 normalize_float($_POST['cost']),
-                trim((string)$_POST['details']),
+                trim($_POST['details']),
                 date('Y-m-d H:i:s')
             ]);
-            audit('create', 'health_log', (int)db()->lastInsertId());
+            audit('create', 'health_log', (int)$pdo->lastInsertId());
             redirect('?page=health&saved=1');
         }
 
+        // খরচ
         if ($action === 'expense') {
-            $stmt = db()->prepare("
-                INSERT INTO expense_logs(expense_date,batch_id,expense_type,amount,notes,created_at)
+            $pdo->prepare("
+                INSERT INTO expense_logs(expense_date, batch_id, expense_type, amount, notes, created_at)
                 VALUES(?,?,?,?,?,?)
-            ");
-            $stmt->execute([
+            ")->execute([
                 $_POST['expense_date'],
                 normalize_int($_POST['batch_id']) ?: null,
-                trim((string)$_POST['expense_type']),
+                trim($_POST['expense_type']),
                 normalize_float($_POST['amount']),
-                trim((string)$_POST['notes']),
+                trim($_POST['notes']),
                 date('Y-m-d H:i:s')
             ]);
-            audit('create', 'expense_log', (int)db()->lastInsertId());
+            audit('create', 'expense_log', (int)$pdo->lastInsertId());
             redirect('?page=expenses&saved=1');
         }
+
+        // ইউজার তৈরি (শুধু অ্যাডমিন)
+        if ($action === 'create_user' && is_admin()) {
+            $username = trim($_POST['username']);
+            $password = $_POST['password'];
+            $role = $_POST['role'] ?? 'viewer';
+            $email = trim($_POST['email']);
+            
+            $stmt = $pdo->prepare("INSERT INTO users (username, password_hash, role, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$username, password_hash($password, PASSWORD_DEFAULT), $role, $email, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
+            audit('create', 'user', (int)$pdo->lastInsertId(), "User $username created");
+            redirect('?page=users&saved=1');
+        }
+
     } catch (Throwable $ex) {
         $formError = $ex->getMessage();
     }
 }
 
-// ==================== DATA FETCH ====================
+// ==================== ডেটা ফেচ ====================
 $pdo = db();
 $settings = $pdo->query("SELECT * FROM settings WHERE id=1")->fetch();
-$batches = $pdo->query("SELECT * FROM batches ORDER BY batch_no")->fetchAll();
+$dark_mode = (int)($settings['dark_mode'] ?? 0);
 
-$totalCount = 0;
-$totalInitialWeight = 0;
-$totalCurrentWeight = 0;
-$totalDeathCount = 0;
-$totalInitialCost = 0;
-foreach ($batches as $b) {
-    $totalCount += (int)$b['current_count'];
-    $totalInitialWeight += (float)$b['initial_weight'];
-    $totalCurrentWeight += (float)$b['current_weight'];
-    $totalDeathCount += (int)$b['death_count'];
-    $totalInitialCost += (float)$b['initial_cost'];
+// ডার্ক মোড কুকি/সেশন
+if (isset($_GET['dark'])) {
+    $_SESSION['dark_mode'] = (int)$_GET['dark'];
+    $dark_mode = (int)$_GET['dark'];
+} elseif (isset($_SESSION['dark_mode'])) {
+    $dark_mode = (int)$_SESSION['dark_mode'];
 }
 
-if ((float)$settings['total_current_weight'] > 0) {
-    $dashboardCurrentWeight = (float)$settings['total_current_weight'];
-} else {
-    $dashboardCurrentWeight = $totalCurrentWeight;
-}
+// ব্যাচ ডেটা
+$search = $_GET['search'] ?? '';
+$batch_filter = $_GET['batch_filter'] ?? '';
+$date_from = $_GET['date_from'] ?? '';
+$date_to = $_GET['date_to'] ?? '';
 
+$batch_query = "SELECT * FROM batches WHERE 1=1";
+$params = [];
+if ($search) {
+    $batch_query .= " AND (fish_name LIKE ? OR batch_no LIKE ?)";
+    $params[] = "%$search%";
+    $params[] = "%$search%";
+}
+if ($batch_filter) {
+    $batch_query .= " AND status = ?";
+    $params[] = $batch_filter;
+}
+if ($date_from) {
+    $batch_query .= " AND release_date >= ?";
+    $params[] = $date_from;
+}
+if ($date_to) {
+    $batch_query .= " AND release_date <= ?";
+    $params[] = $date_to;
+}
+$batch_query .= " ORDER BY batch_no";
+
+$batches = $pdo->prepare($batch_query);
+$batches->execute($params);
+$batches = $batches->fetchAll();
+
+// পেজিনেশন
+$page_num = max(1, (int)($_GET['p'] ?? 1));
+$total_items = count($batches);
+$total_pages = ceil($total_items / ITEMS_PER_PAGE);
+$offset = ($page_num - 1) * ITEMS_PER_PAGE;
+$batches_paged = array_slice($batches, $offset, ITEMS_PER_PAGE);
+
+// অন্যান্য ডেটা
+$totalCount = array_sum(array_column($batches, 'current_count'));
+$totalInitialWeight = array_sum(array_column($batches, 'initial_weight'));
+$totalCurrentWeight = array_sum(array_column($batches, 'current_weight'));
+$totalDeathCount = array_sum(array_column($batches, 'death_count'));
+$totalInitialCost = array_sum(array_column($batches, 'initial_cost'));
+
+$dashboardCurrentWeight = (float)$settings['total_current_weight'] > 0 ? (float)$settings['total_current_weight'] : $totalCurrentWeight;
 $overallGain = $dashboardCurrentWeight - $totalInitialWeight;
-$overallGainPercent = $totalInitialWeight > 0 ? ($overallGain / $totalInitialWeight) * 100 : 0;
 
-// Calculate total expenses
 $totalFeedCost = (float)$pdo->query("SELECT COALESCE(SUM(feed_cost),0) FROM feed_logs")->fetchColumn();
 $totalHealthCost = (float)$pdo->query("SELECT COALESCE(SUM(cost),0) FROM health_logs")->fetchColumn();
 $totalExpenses = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM expense_logs")->fetchColumn();
 $totalAllExpenses = $totalInitialCost + $totalFeedCost + $totalHealthCost + $totalExpenses;
 
-// Calculate market value
 $marketPricePerKg = (float)$settings['market_price_per_kg'];
 $estimatedMarketValue = $dashboardCurrentWeight * $marketPricePerKg;
 $estimatedProfit = $estimatedMarketValue - $totalAllExpenses;
 $profitPercent = $totalAllExpenses > 0 ? ($estimatedProfit / $totalAllExpenses) * 100 : 0;
 
+// ইউজার ডেটা
+$users = $pdo->query("SELECT id, username, role, email, created_at FROM users ORDER BY id")->fetchAll();
+
+// অন্যান্য ডেটা
 $editBatch = null;
 if (isset($_GET['edit']) && $_GET['edit'] !== 'new') {
     $stmt = $pdo->prepare("SELECT * FROM batches WHERE id=?");
@@ -792,7 +835,20 @@ $expenseLogs = $pdo->query("
     LIMIT 50
 ")->fetchAll();
 
-// ==================== RENDER LOGIN ====================
+// Chart ডেটা
+$chart_data = [
+    'labels' => [],
+    'weights' => [],
+    'counts' => [],
+    'dates' => []
+];
+foreach ($batches as $b) {
+    $chart_data['labels'][] = 'B' . $b['batch_no'] . ' - ' . $b['fish_name'];
+    $chart_data['weights'][] = (float)$b['current_weight'];
+    $chart_data['counts'][] = (int)$b['current_count'];
+}
+
+// ==================== রেন্ডার লগইন ====================
 function render_login(string $error = ''): void {
     $token = csrf_token();
     ?>
@@ -801,12 +857,10 @@ function render_login(string $error = ''): void {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="format-detection" content="telephone=no">
 <title>লগইন — <?= e(APP_NAME) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:'Noto Sans Bengali',system-ui,sans-serif;background:linear-gradient(135deg,#0f172a 0%,#164e63 100%);display:grid;place-items:center;padding:20px;color:#0f172a;touch-action:manipulation;-webkit-user-select:none;user-select:none}.login-card{width:min(440px,100%);background:rgba(255,255,255,0.95);backdrop-filter:blur(20px);border-radius:28px;padding:40px;box-shadow:0 30px 80px rgba(0,0,0,0.3)}.logo-icon{width:64px;height:64px;border-radius:20px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;display:grid;place-items:center;font-size:32px;margin-bottom:20px}.login-card h1{margin:0 0 8px;font-size:26px;color:#0f172a}.login-card p{color:#64748b;margin-bottom:24px}.field{margin:16px 0}.field label{display:block;font-weight:700;margin-bottom:8px;color:#334155}.field input{width:100%;padding:14px 16px;border:2px solid #e2e8f0;border-radius:14px;font-size:18px;letter-spacing:5px;transition:border-color 0.3s;-webkit-user-select:text;user-select:text}.field input:focus{outline:none;border-color:#0f766e}.btn-login{width:100%;padding:14px;border:0;border-radius:14px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;font-weight:800;font-size:16px;cursor:pointer;transition:transform 0.2s}.btn-login:hover{transform:translateY(-2px)}.error-msg{background:#fef2f2;color:#dc2626;padding:12px;border-radius:12px;margin:12px 0;font-size:14px}
-@media(max-width:480px){.login-card{padding:24px}.login-card h1{font-size:22px}}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:'Noto Sans Bengali',system-ui,sans-serif;background:linear-gradient(135deg,#0f172a 0%,#164e63 100%);display:grid;place-items:center;padding:20px;color:#0f172a}.login-card{width:min(440px,100%);background:rgba(255,255,255,0.95);backdrop-filter:blur(20px);border-radius:28px;padding:40px;box-shadow:0 30px 80px rgba(0,0,0,0.3)}.logo-icon{width:64px;height:64px;border-radius:20px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;display:grid;place-items:center;font-size:32px;margin-bottom:20px}.login-card h1{margin:0 0 8px;font-size:26px;color:#0f172a}.login-card p{color:#64748b;margin-bottom:24px}.field{margin:16px 0}.field label{display:block;font-weight:700;margin-bottom:8px;color:#334155}.field input{width:100%;padding:14px 16px;border:2px solid #e2e8f0;border-radius:14px;font-size:16px;transition:border-color 0.3s}.field input:focus{outline:none;border-color:#0f766e}.btn-login{width:100%;padding:14px;border:0;border-radius:14px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;font-weight:800;font-size:16px;cursor:pointer;transition:transform 0.2s}.btn-login:hover{transform:translateY(-2px)}.error-msg{background:#fef2f2;color:#dc2626;padding:12px;border-radius:12px;margin:12px 0;font-size:14px}
 </style>
 </head>
 <body>
@@ -817,7 +871,8 @@ function render_login(string $error = ''): void {
 <?php if ($error): ?><div class="error-msg"><?= e($error) ?></div><?php endif; ?>
 <input type="hidden" name="login" value="1">
 <input type="hidden" name="csrf" value="<?= e($token) ?>">
-<div class="field"><label>নিরাপত্তা PIN</label><input name="pin" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" required></div>
+<div class="field"><label>ইউজারনেম</label><input name="username" type="text" placeholder="admin" required></div>
+<div class="field"><label>নিরাপত্তা PIN</label><input name="pin" type="password" inputmode="numeric" maxlength="12" required></div>
 <button class="btn-login" type="submit">ড্যাশবোর্ডে প্রবেশ</button>
 </form>
 </body>
@@ -825,295 +880,288 @@ function render_login(string $error = ''): void {
 <?php
 }
 
-// ==================== MAIN LAYOUT ====================
+// ==================== HTML আউটপুট শুরু ====================
 ?>
 <!doctype html>
-<html lang="bn">
+<html lang="bn" <?= $dark_mode ? 'data-theme="dark"' : '' ?>>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="format-detection" content="telephone=no">
-<meta name="theme-color" content="#0f766e">
-<title><?= e($settings['project_name']) ?> — <?= match($page) {
-    'dashboard' => 'ড্যাশবোর্ড',
-    'batches' => 'ব্যাচ',
-    'growth' => 'Growth Analysis',
-    'feed' => 'খাদ্য ব্যবস্থাপনা',
-    'health' => 'স্বাস্থ্য রেকর্ড',
-    'expenses' => 'খরচ হিসাব',
-    'analytics' => 'এনালাইসিস',
-    'accounting' => 'হিসাবনিকাশ',
-    'settings' => 'সেটিংস',
-    default => 'ড্যাশবোর্ড'
-} ?></title>
+<meta name="theme-color" content="<?= $dark_mode ? '#0f172a' : '#0f766e' ?>">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.json">
+<title><?= e($settings['project_name']) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-:root{--bg:#f8fafc;--card:#ffffff;--ink:#0f172a;--muted:#64748b;--primary:#0f766e;--primary2:#115e59;--accent:#14b8a6;--line:#e2e8f0;--danger:#ef4444;--warning:#f59e0b;--success:#10b981;--info:#3b82f6;--shadow:0 1px 3px rgba(0,0,0,0.1),0 1px 2px rgba(0,0,0,0.06);--shadow-lg:0 10px 40px rgba(0,0,0,0.1)}
-*{box-sizing:border-box}html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;-webkit-tap-highlight-color:transparent}body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans Bengali',system-ui,sans-serif;touch-action:manipulation;-webkit-user-select:none;user-select:none;overscroll-behavior-y:contain}
-input,textarea,select{-webkit-user-select:text;user-select:text}
-.wrap{width:min(1400px,95%);margin:auto}
-/* Mobile Bottom Navigation */
-.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);z-index:1000;padding:8px 0;box-shadow:0 -4px 20px rgba(0,0,0,0.1);padding-bottom:env(safe-area-inset-bottom)}
-.mobile-nav-inner{display:flex;justify-content:space-around;align-items:center;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:var(--muted);font-size:10px;font-weight:600;padding:4px 8px;border-radius:8px;transition:all 0.3s;white-space:nowrap;min-width:50px}
-.mobile-nav-item.active{color:var(--primary)}
-.mobile-nav-item .nav-icon{font-size:20px}
-/* Top Navigation */
-.top-nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--line)}
-.nav-inner{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:20px}
-.brand{font-weight:800;font-size:20px;color:var(--primary);display:flex;align-items:center;gap:10px}
-.brand-icon{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;display:grid;place-items:center;font-size:20px}
-.nav-links{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.nav-links a{padding:9px 14px;border-radius:10px;text-decoration:none;color:#334155;font-weight:600;font-size:14px;transition:all 0.2s}
-.nav-links a:hover{background:#f1f5f9;color:var(--primary)}
-.nav-links a.active{background:var(--primary);color:#fff}
-.btn-logout{background:#fee2e2;color:#991b1b;border:0;padding:9px 14px;border-radius:10px;font-weight:600;cursor:pointer;transition:all 0.2s;font-size:14px}
-.btn-logout:hover{background:#fecaca}
-/* Hero Section */
-.hero{padding:30px 0 20px;display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
-.hero h1{font-size:clamp(24px,4vw,38px);margin:0 0 8px;font-weight:800}
-.hero .subtitle{color:var(--muted);font-size:15px}
-.live-badge{display:inline-flex;align-items:center;gap:8px;background:#ecfdf5;color:#059669;padding:8px 14px;border-radius:999px;font-size:12px;font-weight:700}
-.live-dot{width:8px;height:8px;border-radius:50%;background:#10b981;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-/* Cards */
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px;transition:box-shadow 0.3s}
-.card:hover{box-shadow:var(--shadow-lg)}
-/* KPI Cards */
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:20px 0}
-.kpi-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;overflow:hidden;transition:all 0.3s;cursor:pointer}
-.kpi-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
-.kpi-icon{position:absolute;top:15px;right:15px;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:20px}
-.kpi-label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
-.kpi-value{font-size:28px;font-weight:800;margin-top:8px;color:var(--ink)}
-.kpi-change{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;margin-top:8px;padding:4px 8px;border-radius:999px}
-.kpi-change.positive{background:#ecfdf5;color:#059669}
-.kpi-change.negative{background:#fef2f2;color:#dc2626}
-/* Section */
-.section{margin:30px 0}
-.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
-.section-header h2{font-size:22px;font-weight:800;margin:0}
-/* Buttons */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;background:var(--primary);color:#fff;padding:11px 18px;border-radius:12px;font-weight:700;text-decoration:none;cursor:pointer;transition:all 0.2s;font-size:14px}
-.btn:hover{background:var(--primary2);transform:translateY(-1px)}
-.btn-outline{background:#e2e8f0;color:#334155}
-.btn-outline:hover{background:#cbd5e1}
-.btn-danger{background:var(--danger)}
-.btn-success{background:var(--success)}
-.btn-info{background:var(--info)}
-.btn-warning{background:var(--warning)}
-.btn-sm{padding:6px 12px;font-size:12px}
-.btn-xs{padding:4px 8px;font-size:11px}
-/* Table */
-.table-wrap{overflow-x:auto;border-radius:16px;border:1px solid var(--line);background:#fff;-webkit-overflow-scrolling:touch}
-.table{width:100%;border-collapse:collapse;min-width:900px}
-.table th,.table td{text-align:left;padding:14px 16px;border-bottom:1px solid var(--line)}
-.table th{font-size:12px;text-transform:uppercase;color:var(--muted);background:#f8fafc;font-weight:700;letter-spacing:0.5px;position:sticky;top:0;z-index:10}
-.table tbody tr:hover{background:#f8fafc}
-.badge{display:inline-block;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700}
-.badge-green{background:#ecfdf5;color:#059669}
-.badge-yellow{background:#fef3c7;color:#d97706}
-.badge-red{background:#fef2f2;color:#dc2626}
-.badge-blue{background:#eff6ff;color:#2563eb}
-/* Form */
-.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
-.field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px;color:#334155}
-.field input,.field select,.field textarea{width:100%;padding:11px 14px;border:2px solid #e2e8f0;border-radius:12px;background:#fff;font:inherit;transition:border-color 0.3s}
-.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--primary)}
-.field textarea{min-height:100px;resize:vertical}
-/* Chart */
-.chart-container{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin:20px 0}
-.chart-bars{display:flex;align-items:end;gap:12px;height:200px;padding-top:20px;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.chart-bar{flex:1;min-width:30px;background:linear-gradient(180deg,#14b8a6,#0f766e);border-radius:8px 8px 4px 4px;position:relative;transition:all 0.3s;cursor:pointer}
-.chart-bar:hover{opacity:0.8;transform:scaleY(1.02)}
-.chart-bar .bar-label{position:absolute;bottom:100%;font-size:10px;color:var(--muted);white-space:nowrap;transform:translateX(-50%);left:50%;padding-bottom:4px;font-weight:600}
-.chart-bar .bar-value{position:absolute;top:100%;font-size:10px;color:var(--muted);white-space:nowrap;transform:translateX(-50%);left:50%;padding-top:4px}
-/* Notice */
-.notice{padding:14px 18px;border-radius:12px;background:#ecfdf5;color:#065f46;margin:16px 0;display:flex;align-items:center;gap:10px;font-weight:600}
-.notice-error{background:#fef2f2;color:#991b1b}
-/* Two column */
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-.three-col{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
-/* Progress bar */
-.progress-bar{width:100%;height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin-top:8px}
-.progress-fill{height:100%;border-radius:999px;transition:width 0.3s}
-/* Footer */
-.footer{padding:40px 0;color:var(--muted);text-align:center;border-top:1px solid var(--line);margin-top:40px}
-/* Profit/Loss Card */
-.pl-card{background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:16px;padding:20px;text-align:center}
-.pl-card.loss{background:linear-gradient(135deg,#ef4444,#dc2626)}
-.pl-card .pl-value{font-size:32px;font-weight:800;margin:8px 0}
-/* Action buttons in table */
-.action-btns{display:flex;gap:4px;flex-wrap:wrap}
-/* Responsive Design */
-@media(max-width:768px){
-    .nav-inner{flex-direction:column;padding:12px 0}
-    .nav-links{display:none}
-    .mobile-nav{display:block}
-    .hero{flex-direction:column;align-items:flex-start}
-    .kpi-grid{grid-template-columns:1fr 1fr}
-    .kpi-value{font-size:22px}
-    .two-col,.three-col{grid-template-columns:1fr}
-    .form-grid{grid-template-columns:1fr}
-    .table{min-width:600px}
-    .section{padding-bottom:60px}
-    .footer{padding-bottom:80px}
-    .chart-bars{height:150px}
-    .pl-card .pl-value{font-size:24px}
+:root {
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --primary: #0f766e;
+    --primary2: #115e59;
+    --accent: #14b8a6;
+    --line: #e2e8f0;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --success: #10b981;
+    --info: #3b82f6;
+    --shadow: 0 1px 3px rgba(0,0,0,0.1);
+    --shadow-lg: 0 10px 40px rgba(0,0,0,0.1);
 }
-@media(max-width:480px){
-    .kpi-grid{grid-template-columns:1fr}
-    .kpi-value{font-size:20px}
-    .hero h1{font-size:24px}
-    .section-header h2{font-size:18px}
-    .btn{padding:9px 14px;font-size:13px}
-    .card{padding:14px}
+
+[data-theme="dark"] {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --ink: #f1f5f9;
+    --muted: #94a3b8;
+    --line: #334155;
+    --shadow: 0 1px 3px rgba(0,0,0,0.3);
+    --shadow-lg: 0 10px 40px rgba(0,0,0,0.5);
 }
+
+*{box-sizing:border-box}html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans Bengali',system-ui,sans-serif;transition:background 0.3s,color 0.3s}.wrap{width:min(1400px,95%);margin:auto}
+
+/* নেভিগেশন */
+.top-nav{position:sticky;top:0;z-index:100;background:var(--card);backdrop-filter:blur(20px);border-bottom:1px solid var(--line)}.nav-inner{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:10px 0}.brand{font-weight:800;font-size:20px;color:var(--primary);display:flex;align-items:center;gap:10px}.brand-icon{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;display:grid;place-items:center;font-size:20px}.nav-links{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.nav-links a{padding:9px 14px;border-radius:10px;text-decoration:none;color:var(--muted);font-weight:600;font-size:14px;transition:all 0.2s}.nav-links a:hover{background:var(--line);color:var(--primary)}.nav-links a.active{background:var(--primary);color:#fff}.btn-logout{background:#fee2e2;color:#991b1b;border:0;padding:9px 14px;border-radius:10px;font-weight:600;cursor:pointer;transition:all 0.2s;font-size:14px}.btn-logout:hover{background:#fecaca}
+
+/* কার্ড */
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px;transition:all 0.3s}.card:hover{box-shadow:var(--shadow-lg)}
+
+/* কেপিআই */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:20px 0}.kpi-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;transition:all 0.3s;cursor:pointer}.kpi-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}.kpi-value{font-size:28px;font-weight:800}
+
+/* বাটন */
+.btn{display:inline-flex;align-items:center;gap:8px;border:0;background:var(--primary);color:#fff;padding:11px 18px;border-radius:12px;font-weight:700;text-decoration:none;cursor:pointer;transition:all 0.2s;font-size:14px}.btn:hover{background:var(--primary2);transform:translateY(-1px)}.btn-danger{background:var(--danger)}.btn-success{background:var(--success)}.btn-info{background:var(--info)}.btn-warning{background:var(--warning)}.btn-sm{padding:6px 12px;font-size:12px}.btn-xs{padding:4px 8px;font-size:11px}
+
+/* টেবিল */
+.table-wrap{overflow-x:auto;border-radius:16px;border:1px solid var(--line);background:var(--card)}.table{width:100%;border-collapse:collapse;min-width:700px}.table th,.table td{text-align:left;padding:14px 16px;border-bottom:1px solid var(--line)}.table th{background:var(--bg);font-weight:700;font-size:12px;text-transform:uppercase;color:var(--muted);position:sticky;top:0}.badge{display:inline-block;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700}.badge-green{background:#ecfdf5;color:#059669}.badge-red{background:#fef2f2;color:#dc2626}.badge-blue{background:#eff6ff;color:#2563eb}
+
+/* ফর্ম */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px;color:var(--muted)}.field input,.field select,.field textarea{width:100%;padding:11px 14px;border:2px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;transition:border-color 0.3s}.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--primary)}.field textarea{min-height:100px;resize:vertical}
+
+/* গ্রাফ */
+.chart-container{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin:20px 0}.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+
+/* সার্চ */
+.search-bar{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}.search-bar input,.search-bar select{padding:10px 14px;border:2px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit}
+
+/* পেজিনেশন */
+.pagination{display:flex;gap:6px;justify-content:center;margin:20px 0}.pagination a,.pagination span{padding:8px 14px;border-radius:8px;border:1px solid var(--line);text-decoration:none;color:var(--ink)}.pagination .active{background:var(--primary);color:#fff;border-color:var(--primary)}.pagination a:hover{background:var(--line)}
+
+/* মোবাইল */
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);z-index:1000;padding:8px 0}.mobile-nav-inner{display:flex;justify-content:space-around;overflow-x:auto}.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:var(--muted);font-size:10px;font-weight:600;padding:4px 8px;min-width:50px}.mobile-nav-item.active{color:var(--primary)}.mobile-nav-item .nav-icon{font-size:20px}
+
+/* রেস্পন্সিভ */
+@media(max-width:768px){.nav-links{display:none}.mobile-nav{display:block}.kpi-grid{grid-template-columns:1fr 1fr}.chart-grid{grid-template-columns:1fr}.kpi-value{font-size:22px}.two-col{grid-template-columns:1fr}.search-bar{flex-direction:column}}
+@media(max-width:480px){.kpi-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 
-<!-- Top Navigation -->
+<!-- টপ নেভিগেশন -->
 <header class="top-nav">
     <div class="wrap nav-inner">
-        <div class="brand">
-            <div class="brand-icon">🐟</div>
-            <?= e($settings['project_name']) ?>
-        </div>
+        <div class="brand"><div class="brand-icon">🐟</div><?= e($settings['project_name']) ?></div>
         <div class="nav-links">
-            <a href="?page=dashboard" class="<?= $page === 'dashboard' ? 'active' : '' ?>">ড্যাশবোর্ড</a>
-            <a href="?page=batches" class="<?= $page === 'batches' ? 'active' : '' ?>">ব্যাচ</a>
-            <a href="?page=growth" class="<?= $page === 'growth' ? 'active' : '' ?>">Growth</a>
-            <a href="?page=feed" class="<?= $page === 'feed' ? 'active' : '' ?>">খাদ্য</a>
-            <a href="?page=health" class="<?= $page === 'health' ? 'active' : '' ?>">স্বাস্থ্য</a>
-            <a href="?page=expenses" class="<?= $page === 'expenses' ? 'active' : '' ?>">খরচ</a>
-            <a href="?page=accounting" class="<?= $page === 'accounting' ? 'active' : '' ?>">হিসাব</a>
-            <a href="?page=analytics" class="<?= $page === 'analytics' ? 'active' : '' ?>">এনালাইসিস</a>
-            <a href="?page=settings" class="<?= $page === 'settings' ? 'active' : '' ?>">সেটিংস</a>
-            <button class="btn-logout" onclick="window.location='?logout=1'">লগআউট</button>
+            <a href="?page=dashboard" class="<?= $page === 'dashboard' ? 'active' : '' ?>">📊 ড্যাশবোর্ড</a>
+            <a href="?page=batches" class="<?= $page === 'batches' ? 'active' : '' ?>">🐠 ব্যাচ</a>
+            <a href="?page=growth" class="<?= $page === 'growth' ? 'active' : '' ?>">📈 Growth</a>
+            <a href="?page=feed" class="<?= $page === 'feed' ? 'active' : '' ?>">🍚 খাদ্য</a>
+            <a href="?page=health" class="<?= $page === 'health' ? 'active' : '' ?>">💊 স্বাস্থ্য</a>
+            <a href="?page=expenses" class="<?= $page === 'expenses' ? 'active' : '' ?>">💰 খরচ</a>
+            <a href="?page=accounting" class="<?= $page === 'accounting' ? 'active' : '' ?>">📊 হিসাব</a>
+            <a href="?page=analytics" class="<?= $page === 'analytics' ? 'active' : '' ?>">📈 এনালাইসিস</a>
+            <?php if (is_admin()): ?>
+            <a href="?page=users" class="<?= $page === 'users' ? 'active' : '' ?>">👥 ইউজার</a>
+            <?php endif; ?>
+            <a href="?page=settings" class="<?= $page === 'settings' ? 'active' : '' ?>">⚙️ সেটিংস</a>
+            <button class="btn-logout" onclick="window.location='?logout=1'">🚪 লগআউট</button>
         </div>
     </div>
 </header>
 
 <main class="wrap">
 
-<?php if (isset($_GET['saved'])): ?><div class="notice">✓ তথ্য সফলভাবে সংরক্ষণ হয়েছে।</div><?php endif; ?>
-<?php if (isset($_GET['deleted'])): ?><div class="notice">✓ তথ্য মুছে ফেলা হয়েছে।</div><?php endif; ?>
-<?php if (!empty($formError)): ?><div class="notice notice-error">⚠ <?= e($formError) ?></div><?php endif; ?>
+<?php if (isset($_GET['saved'])): ?>
+<div class="notice">✅ তথ্য সফলভাবে সংরক্ষণ হয়েছে।</div>
+<?php endif; ?>
+<?php if (isset($_GET['deleted'])): ?>
+<div class="notice">🗑️ তথ্য মুছে ফেলা হয়েছে।</div>
+<?php endif; ?>
+<?php if (!empty($formError)): ?>
+<div class="notice" style="background:#fef2f2;color:#991b1b">⚠ <?= e($formError) ?></div>
+<?php endif; ?>
+
+<style>
+.notice{padding:14px 18px;border-radius:12px;background:#ecfdf5;color:#065f46;margin:16px 0;font-weight:600}
+</style>
 
 <?php
-// ==================== DASHBOARD PAGE ====================
+// ==================== ড্যাশবোর্ড ====================
 if ($page === 'dashboard'):
 ?>
-<section class="hero" id="dashboard">
-    <div>
-        <h1>প্রকল্প পরিসংখ্যান ড্যাশবোর্ড</h1>
-        <div class="subtitle">সর্বশেষ ভিত্তি: ৩১ আগস্ট ২০২৬ · প্রতি রাত ১২:০০ টায় লাইভ আপডেট</div>
-    </div>
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <span class="live-badge"><span class="live-dot"></span> লাইভ আপডেট সক্রিয়</span>
-        <a class="btn" href="?page=batches&edit=new">＋ নতুন ব্যাচ</a>
-        <a class="btn btn-outline" href="?page=growth">＋ Growth Snapshot</a>
-    </div>
+<section style="padding:20px 0">
+    <h1 style="font-size:clamp(24px,4vw,38px);margin:0 0 8px">📊 প্রকল্প পরিসংখ্যান ড্যাশবোর্ড</h1>
+    <p style="color:var(--muted)">সর্বশেষ ভিত্তি: ৩১ আগস্ট ২০২৬ · প্রতি রাত ১২:০০ টায় লাইভ আপডেট</p>
 </section>
 
 <section class="kpi-grid">
     <div class="kpi-card" onclick="location='?page=batches'">
-        <div class="kpi-icon" style="background:#ecfdf5">🐟</div>
-        <div class="kpi-label">বর্তমানে জীবিত মাছ</div>
+        <div class="kpi-label">🐟 বর্তমানে জীবিত মাছ</div>
         <div class="kpi-value"><?= number_format($totalCount) ?> টি</div>
-        <span class="kpi-change positive">▲ সক্রিয়</span>
     </div>
     <div class="kpi-card" onclick="location='?page=accounting'">
-        <div class="kpi-icon" style="background:#eff6ff">⚖️</div>
-        <div class="kpi-label">Current Live Biomass</div>
-        <div class="kpi-value"><?= number_format($dashboardCurrentWeight,2) ?> kg</div>
-        <span class="kpi-change positive">▲ <?= number_format($overallGain,2) ?> kg</span>
+        <div class="kpi-label">⚖️ বর্তমান ওজন</div>
+        <div class="kpi-value"><?= number_format($dashboardCurrentWeight,2) ?> কেজি</div>
     </div>
     <div class="kpi-card" onclick="location='?page=accounting'">
-        <div class="kpi-icon" style="background:#fef3c7">💰</div>
-        <div class="kpi-label">আনুমানিক বাজার মূল্য</div>
+        <div class="kpi-label">💰 আনুমানিক বাজার মূল্য</div>
         <div class="kpi-value">৳<?= number_format($estimatedMarketValue,0) ?></div>
-        <span class="kpi-change positive">৳<?= number_format($marketPricePerKg,0) ?>/kg</span>
     </div>
     <div class="kpi-card" onclick="location='?page=accounting'">
-        <div class="kpi-icon" style="background:#fef2f2">📊</div>
-        <div class="kpi-label">মোট খরচ</div>
-        <div class="kpi-value">৳<?= number_format($totalAllExpenses,0) ?></div>
-        <span class="kpi-change negative">সর্বমোট</span>
-    </div>
-    <div class="kpi-card" onclick="location='?page=accounting'">
-        <div class="kpi-icon" style="background:#f0fdf4">💹</div>
-        <div class="kpi-label">লাভ/ক্ষতি</div>
+        <div class="kpi-label">📊 লাভ/ক্ষতি</div>
         <div class="kpi-value" style="color:<?= $estimatedProfit >= 0 ? '#10b981' : '#ef4444' ?>">৳<?= number_format($estimatedProfit,0) ?></div>
-        <span class="kpi-change <?= $estimatedProfit >= 0 ? 'positive' : 'negative' ?>"><?= $estimatedProfit >= 0 ? '▲' : '▼' ?> <?= number_format($profitPercent,1) ?>%</span>
     </div>
 </section>
 
-<section class="chart-container">
-    <div class="section-header">
-        <h2>📊 ব্যাচভিত্তিক বর্তমান অবস্থা</h2>
-        <span class="live-badge"><span class="live-dot"></span> রিয়েল-টাইম</span>
+<div class="chart-grid">
+    <div class="chart-container">
+        <h3>📊 ব্যাচভিত্তিক ওজন</h3>
+        <canvas id="weightChart"></canvas>
     </div>
-    <div class="chart-bars">
-        <?php foreach ($batches as $b): 
-            $h = max(8,min(100,(float)$b['current_weight'] / max(1,$dashboardCurrentWeight) * 100)); 
-        ?>
-        <div class="chart-bar" style="height:<?= $h ?>%">
-            <span class="bar-label">B<?= (int)$b['batch_no'] ?></span>
-            <span class="bar-value"><?= number_format((float)$b['current_weight'],1) ?>kg</span>
-        </div>
-        <?php endforeach; ?>
+    <div class="chart-container">
+        <h3>🧮 ব্যাচভিত্তিক সংখ্যা</h3>
+        <canvas id="countChart"></canvas>
     </div>
-</section>
+</div>
 
-<section class="section">
-    <div class="section-header">
-        <h2>🌊 প্রকল্প ভিত্তি</h2>
-        <a class="btn btn-info" href="?page=accounting">বিস্তারিত হিসাব দেখুন</a>
-    </div>
-    <div class="two-col">
-        <div class="card">
-            <p><strong>পানির গভীরতা:</strong> <?= e($settings['pond_depth']) ?></p>
-            <p><strong>মোট বর্তমান Biomass:</strong> <?= number_format($dashboardCurrentWeight,2) ?> kg</p>
-            <p><strong>মোট জীবিত মাছ:</strong> <?= number_format($totalCount) ?> টি</p>
-        </div>
-        <div class="card">
-            <p><strong>মোট ব্যাচ:</strong> <?= count($batches) ?> টি</p>
-            <p><strong>মোট প্রাথমিক ওজন:</strong> <?= number_format($totalInitialWeight,2) ?> kg</p>
-            <p><strong>মোট মৃত্যু:</strong> <?= number_format($totalDeathCount) ?> টি</p>
-        </div>
-    </div>
-</section>
+<div class="card">
+    <h3>📈 গ্রোথ ট্রেন্ড</h3>
+    <canvas id="growthChart" height="100"></canvas>
+</div>
+
+<script>
+new Chart(document.getElementById('weightChart'), {
+    type: 'bar',
+    data: {
+        labels: <?= json_encode($chart_data['labels']) ?>,
+        datasets: [{
+            label: 'ওজন (কেজি)',
+            data: <?= json_encode($chart_data['weights']) ?>,
+            backgroundColor: 'rgba(15, 118, 110, 0.6)',
+            borderColor: '#0f766e',
+            borderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: true } }
+    }
+});
+
+new Chart(document.getElementById('countChart'), {
+    type: 'bar',
+    data: {
+        labels: <?= json_encode($chart_data['labels']) ?>,
+        datasets: [{
+            label: 'সংখ্যা',
+            data: <?= json_encode($chart_data['counts']) ?>,
+            backgroundColor: 'rgba(59, 130, 246, 0.6)',
+            borderColor: '#3b82f6',
+            borderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: true } }
+    }
+});
+
+<?php
+$growth_data = [];
+foreach ($batches as $b) {
+    $snap = latest_snapshot((int)$b['id']);
+    if ($snap) {
+        $growth_data['labels'][] = 'B' . $b['batch_no'] . ' - ' . $b['fish_name'];
+        $growth_data['growth'][] = (float)$snap['growth_percent'];
+        $growth_data['survival'][] = (float)$snap['survival_percent'];
+    }
+}
+if (!empty($growth_data)): ?>
+new Chart(document.getElementById('growthChart'), {
+    type: 'line',
+    data: {
+        labels: <?= json_encode($growth_data['labels']) ?>,
+        datasets: [
+            {
+                label: 'গ্রোথ %',
+                data: <?= json_encode($growth_data['growth']) ?>,
+                borderColor: '#10b981',
+                tension: 0.3
+            },
+            {
+                label: 'সারভাইভাল %',
+                data: <?= json_encode($growth_data['survival']) ?>,
+                borderColor: '#3b82f6',
+                tension: 0.3
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { position: 'top' } }
+    }
+});
+<?php endif; ?>
+</script>
 <?php endif; ?>
 
 <?php
-// ==================== BATCHES PAGE ====================
+// ==================== ব্যাচ ====================
 if ($page === 'batches'):
 ?>
-<section class="section" id="batches">
-    <div class="section-header">
-        <h2>🐠 ব্যাচভিত্তিক মাস্টার রেকর্ড</h2>
-        <a class="btn" href="?page=batches&edit=new">＋ নতুন ব্যাচ</a>
+<section>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin:20px 0">
+        <h2>🐠 ব্যাচ ব্যবস্থাপনা</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a class="btn btn-success" href="?page=batches&edit=new">➕ নতুন ব্যাচ</a>
+            <a class="btn btn-info" href="?export=batches">📥 CSV এক্সপোর্ট</a>
+        </div>
     </div>
+
+    <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="🔍 সার্চ করুন..." value="<?= e($search) ?>" onkeyup="searchBatches()">
+        <select id="statusFilter" onchange="filterBatches()">
+            <option value="">সব স্ট্যাটাস</option>
+            <option value="active" <?= $batch_filter === 'active' ? 'selected' : '' ?>>সক্রিয়</option>
+            <option value="inactive" <?= $batch_filter === 'inactive' ? 'selected' : '' ?>>নিষ্ক্রিয়</option>
+        </select>
+        <input type="date" id="dateFrom" value="<?= e($date_from) ?>" onchange="filterBatches()">
+        <input type="date" id="dateTo" value="<?= e($date_to) ?>" onchange="filterBatches()">
+    </div>
+
     <div class="table-wrap">
         <table class="table">
-            <thead><tr><th>ব্যাচ</th><th>মাছ</th><th>ছাড়ার তারিখ</th><th>প্রাথমিক ওজন</th><th>প্রাথমিক সংখ্যা</th><th>ক্রয় মূল্য</th><th>মৃত</th><th>বর্তমান</th><th>Live Weight</th><th>কাজ</th></tr></thead>
+            <thead><tr>
+                <th>ব্যাচ</th><th>মাছ</th><th>ছাড়ার তারিখ</th><th>প্রাথমিক</th><th>বর্তমান</th>
+                <th>Live Weight</th><th>স্ট্যাটাস</th><th>কাজ</th>
+            </tr></thead>
             <tbody>
-            <?php foreach ($batches as $b): ?>
+            <?php foreach ($batches_paged as $b): ?>
             <tr>
-                <td><span class="badge badge-green">ব্যাচ <?= (int)$b['batch_no'] ?></span></td>
+                <td><span class="badge badge-blue">B<?= (int)$b['batch_no'] ?></span></td>
                 <td><strong><?= e($b['fish_name']) ?></strong></td>
                 <td><?= e($b['release_date']) ?></td>
-                <td><?= number_format((float)$b['initial_weight'],2) ?> kg</td>
-                <td><?= number_format((int)$b['initial_count']) ?></td>
-                <td>৳<?= number_format((float)$b['initial_cost'],0) ?></td>
-                <td><?= number_format((int)$b['death_count']) ?> টি</td>
-                <td><strong><?= number_format((int)$b['current_count']) ?></strong></td>
+                <td><?= number_format((int)$b['initial_count']) ?> টি</td>
+                <td><?= number_format((int)$b['current_count']) ?> টি</td>
                 <td><?= number_format((float)$b['current_weight'],2) ?> kg</td>
+                <td><span class="badge <?= $b['status'] === 'active' ? 'badge-green' : 'badge-red' ?>"><?= $b['status'] === 'active' ? '✅ সক্রিয়' : '❌ বন্ধ' ?></span></td>
                 <td>
-                    <div class="action-btns">
-                        <a class="btn btn-outline btn-sm" href="?page=batches&edit=<?= (int)$b['id'] ?>">✏️ এডিট</a>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap">
+                        <a class="btn btn-sm" href="?page=batches&edit=<?= (int)$b['id'] ?>">✏️</a>
                         <form method="post" style="display:inline" onsubmit="return confirm('এই ব্যাচ মুছে ফেলবেন?')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_batch">
@@ -1124,52 +1172,60 @@ if ($page === 'batches'):
                 </td>
             </tr>
             <?php endforeach; ?>
+            <?php if (!$batches_paged): ?><tr><td colspan="8" style="text-align:center;padding:40px;color:var(--muted)">কোন ব্যাচ নেই</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>
+
+    <div class="pagination">
+        <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+        <a href="?page=batches&p=<?= $i ?>&search=<?= urlencode($search) ?>&batch_filter=<?= urlencode($batch_filter) ?>&date_from=<?= urlencode($date_from) ?>&date_to=<?= urlencode($date_to) ?>" 
+           class="<?= $i === $page_num ? 'active' : '' ?>"><?= $i ?></a>
+        <?php endfor; ?>
+    </div>
 </section>
 
-<section class="section" id="batch-form">
-    <div class="section-header">
-        <h2>➕ <?= $editBatch ? 'ব্যাচ তথ্য সংশোধন' : 'নতুন ব্যাচ যুক্ত করুন' ?></h2>
-        <?php if ($editBatch): ?><a class="btn btn-outline" href="?page=batches">Cancel</a><?php endif; ?>
-    </div>
+<?php if (isset($_GET['edit'])): ?>
+<section>
+    <h2>➕ <?= $editBatch ? 'ব্যাচ সম্পাদনা' : 'নতুন ব্যাচ' ?></h2>
     <div class="card">
         <form method="post" class="form-grid">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="save_batch">
             <input type="hidden" name="id" value="<?= (int)($editBatch['id'] ?? 0) ?>">
-            <div class="field"><label>ব্যাচ নম্বর</label><input type="number" name="batch_no" min="1" value="<?= e((string)($editBatch['batch_no'] ?? (count($batches)+1))) ?>" required></div>
+            <div class="field"><label>ব্যাচ নম্বর</label><input type="number" name="batch_no" value="<?= e((string)($editBatch['batch_no'] ?? count($batches)+1)) ?>" required></div>
             <div class="field"><label>মাছের নাম</label><input name="fish_name" value="<?= e((string)($editBatch['fish_name'] ?? '')) ?>" required></div>
             <div class="field"><label>ছাড়ার তারিখ</label><input type="date" name="release_date" value="<?= e((string)($editBatch['release_date'] ?? date('Y-m-d'))) ?>" required></div>
             <div class="field"><label>প্রাথমিক ওজন (kg)</label><input type="number" step="0.01" name="initial_weight" value="<?= e((string)($editBatch['initial_weight'] ?? '0')) ?>" required></div>
             <div class="field"><label>প্রাথমিক সংখ্যা</label><input type="number" name="initial_count" value="<?= e((string)($editBatch['initial_count'] ?? '0')) ?>" required></div>
             <div class="field"><label>ক্রয় মূল্য (৳)</label><input type="number" step="0.01" name="initial_cost" value="<?= e((string)($editBatch['initial_cost'] ?? '0')) ?>" required></div>
-            <div class="field"><label>মৃত ওজন (kg)</label><input type="number" step="0.01" name="death_weight" value="<?= e((string)($editBatch['death_weight'] ?? '0')) ?>"></div>
             <div class="field"><label>মৃত সংখ্যা</label><input type="number" name="death_count" value="<?= e((string)($editBatch['death_count'] ?? '0')) ?>"></div>
-            <div class="field"><label>বর্তমান জীবিত সংখ্যা</label><input type="number" name="current_count" value="<?= e((string)($editBatch['current_count'] ?? '0')) ?>" required></div>
-            <div class="field"><label>বর্তমান Live Weight (kg)</label><input type="number" step="0.01" name="current_weight" value="<?= e((string)($editBatch['current_weight'] ?? '0')) ?>"></div>
+            <div class="field"><label>বর্তমান সংখ্যা</label><input type="number" name="current_count" value="<?= e((string)($editBatch['current_count'] ?? '0')) ?>" required></div>
+            <div class="field"><label>বর্তমান ওজন (kg)</label><input type="number" step="0.01" name="current_weight" value="<?= e((string)($editBatch['current_weight'] ?? '0')) ?>" required></div>
             <div class="field" style="grid-column:span 2"><label>নোট</label><textarea name="notes"><?= e((string)($editBatch['notes'] ?? '')) ?></textarea></div>
-            <div class="field" style="display:flex;gap:8px;align-items:end">
-                <button class="btn btn-success" type="submit"><?= $editBatch ? 'তথ্য আপডেট করুন' : 'ব্যাচ যুক্ত করুন' ?></button>
-            </div>
+            <div class="field"><button class="btn btn-success" type="submit">💾 সংরক্ষণ</button></div>
         </form>
     </div>
 </section>
 <?php endif; ?>
+<?php endif; ?>
 
 <?php
-// ==================== GROWTH PAGE ====================
+// ==================== গ্রোথ ====================
 if ($page === 'growth'):
 ?>
-<section class="section" id="growth">
-    <div class="section-header">
-        <h2>📈 ৭ দিনের Growth Analysis</h2>
-        <a class="btn" href="#snapshot">＋ Snapshot যোগ করুন</a>
+<section>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin:20px 0">
+        <h2>📈 Growth Snapshots</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a class="btn btn-success" href="#snapshot-form">➕ নতুন Snapshot</a>
+            <a class="btn btn-info" href="?export=growth_snapshots">📥 CSV এক্সপোর্ট</a>
+        </div>
     </div>
+
     <div class="table-wrap">
         <table class="table">
-            <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>Live Count</th><th>Live Weight</th><th>Live Avg</th><th>Growth</th><th>Growth %</th><th>Survival</th><th>কাজ</th></tr></thead>
+            <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>Live Count</th><th>Live Weight</th><th>Avg Weight</th><th>Growth %</th><th>Survival %</th><th>কাজ</th></tr></thead>
             <tbody>
             <?php foreach ($snapshots as $s): ?>
             <tr>
@@ -1178,11 +1234,10 @@ if ($page === 'growth'):
                 <td><?= number_format((int)$s['live_count']) ?></td>
                 <td><?= number_format((float)$s['live_weight'],2) ?> kg</td>
                 <td><?= number_format((float)$s['avg_weight'],2) ?> g</td>
-                <td><?= number_format((float)$s['growth_weight'],2) ?> kg</td>
                 <td><span class="badge badge-green"><?= number_format((float)$s['growth_percent'],1) ?>%</span></td>
                 <td><?= number_format((float)$s['survival_percent'],1) ?>%</td>
                 <td>
-                    <form method="post" style="display:inline" onsubmit="return confirm('এই Snapshot মুছে ফেলবেন?')">
+                    <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="action" value="delete_snapshot">
                         <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
@@ -1191,440 +1246,412 @@ if ($page === 'growth'):
                 </td>
             </tr>
             <?php endforeach; ?>
-            <?php if (!$snapshots): ?><tr><td colspan="9">এখনো Growth Snapshot তৈরি হয়নি।</td></tr><?php endif; ?>
+            <?php if (!$snapshots): ?><tr><td colspan="8" style="text-align:center;padding:40px">কোন Snapshot নেই</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>
 </section>
 
-<section class="section" id="snapshot">
-    <div class="section-header">
-        <h2>🧮 Growth Snapshot যোগ করুন</h2>
-    </div>
+<section id="snapshot-form">
+    <h2>🧮 নতুন Snapshot যোগ করুন</h2>
     <div class="card">
         <form method="post" class="form-grid">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="snapshot">
             <div class="field"><label>ব্যাচ</label><select name="batch_id" required><?php foreach($batches as $b): ?><option value="<?= (int)$b['id'] ?>">B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></option><?php endforeach; ?></select></div>
-            <div class="field"><label>Snapshot Date</label><input type="date" name="snapshot_date" value="<?= date('Y-m-d') ?>" required></div>
+            <div class="field"><label>তারিখ</label><input type="date" name="snapshot_date" value="<?= date('Y-m-d') ?>" required></div>
             <div class="field"><label>Live Weight (kg)</label><input type="number" step="0.01" name="live_weight" required></div>
             <div class="field"><label>Live Count</label><input type="number" name="live_count" required></div>
             <div class="field"><label>Feeding Rate (%)</label><input type="number" step="0.1" name="feed_rate" value="0"></div>
             <div class="field" style="grid-column:span 2"><label>নোট</label><input name="notes"></div>
-            <div class="field"><button class="btn btn-success">💾 Snapshot সংরক্ষণ</button></div>
+            <div class="field"><button class="btn btn-success" type="submit">💾 সংরক্ষণ</button></div>
         </form>
     </div>
 </section>
 <?php endif; ?>
 
 <?php
-// ==================== FEED PAGE ====================
+// ==================== খাদ্য ====================
 if ($page === 'feed'):
 ?>
-<section class="section" id="feed">
-    <div class="section-header">
+<section>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin:20px 0">
         <h2>🍚 খাদ্য ব্যবস্থাপনা</h2>
+        <a class="btn btn-info" href="?export=feed_logs">📥 CSV এক্সপোর্ট</a>
     </div>
-    <div class="two-col">
+
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px">
         <div class="card">
-            <h3 style="margin-top:0">নতুন খাদ্য রেকর্ড</h3>
-            <form method="post" class="form-grid">
+            <h3>নতুন খাদ্য রেকর্ড</h3>
+            <form method="post" class="form-grid" style="grid-template-columns:1fr">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="feed">
                 <div class="field"><label>তারিখ</label><input type="date" name="log_date" value="<?= date('Y-m-d') ?>" required></div>
-                <div class="field"><label>ব্যাচ</label><select name="batch_id"><option value="">সব/পুকুর</option><?php foreach($batches as $b): ?><option value="<?= (int)$b['id'] ?>">B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label>ব্যাচ</label><select name="batch_id"><option value="">সব</option><?php foreach($batches as $b): ?><option value="<?= (int)$b['id'] ?>">B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label>খাদ্য (kg)</label><input type="number" step="0.001" name="feed_kg" required></div>
                 <div class="field"><label>খরচ (৳)</label><input type="number" step="0.01" name="feed_cost" required></div>
                 <div class="field"><label>নোট</label><input name="notes"></div>
-                <div class="field"><button class="btn btn-success">🍚 খাদ্য রেকর্ড</button></div>
+                <button class="btn btn-success" type="submit">💾 সংরক্ষণ</button>
             </form>
         </div>
-        <div class="card">
-            <h3 style="margin-top:0">সাম্প্রতিক খাদ্য রেকর্ড</h3>
-            <div class="table-wrap" style="border:none">
-                <table class="table" style="min-width:500px">
-                    <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>খাদ্য</th><th>খরচ</th><th>কাজ</th></tr></thead>
-                    <tbody>
-                    <?php foreach($feedLogs as $f): ?>
-                    <tr>
-                        <td><?= e($f['log_date']) ?></td>
-                        <td><?= $f['batch_no'] ? 'B'.(int)$f['batch_no'] : 'পুকুর' ?></td>
-                        <td><?= number_format((float)$f['feed_kg'],3) ?> kg</td>
-                        <td>৳<?= number_format((float)$f['feed_cost'],0) ?></td>
-                        <td>
-                            <form method="post" style="display:inline" onsubmit="return confirm('এই রেকর্ড মুছে ফেলবেন?')">
-                                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-                                <input type="hidden" name="action" value="delete_feed">
-                                <input type="hidden" name="id" value="<?= (int)$f['id'] ?>">
-                                <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
-                            </form>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
+
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>খাদ্য</th><th>খরচ</th><th>কাজ</th></tr></thead>
+                <tbody>
+                <?php foreach ($feedLogs as $f): ?>
+                <tr>
+                    <td><?= e($f['log_date']) ?></td>
+                    <td><?= $f['batch_no'] ? 'B'.(int)$f['batch_no'] : 'পুকুর' ?></td>
+                    <td><?= number_format((float)$f['feed_kg'],3) ?> kg</td>
+                    <td>৳<?= number_format((float)$f['feed_cost'],0) ?></td>
+                    <td>
+                        <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
+                            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="delete_feed">
+                            <input type="hidden" name="id" value="<?= (int)$f['id'] ?>">
+                            <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </section>
 <?php endif; ?>
 
 <?php
-// ==================== HEALTH PAGE ====================
+// ==================== স্বাস্থ্য ====================
 if ($page === 'health'):
 ?>
-<section class="section" id="health">
-    <div class="section-header">
-        <h2>🩺 রোগ/পানি/চুন/লবণ/ওষুধ রেকর্ড</h2>
+<section>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin:20px 0">
+        <h2>💊 স্বাস্থ্য রেকর্ড</h2>
+        <a class="btn btn-info" href="?export=health_logs">📥 CSV এক্সপোর্ট</a>
     </div>
-    <div class="two-col">
+
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px">
         <div class="card">
-            <h3 style="margin-top:0">নতুন স্বাস্থ্য রেকর্ড</h3>
-            <form method="post" class="form-grid">
+            <h3>নতুন স্বাস্থ্য রেকর্ড</h3>
+            <form method="post" class="form-grid" style="grid-template-columns:1fr">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="health">
                 <div class="field"><label>তারিখ</label><input type="date" name="log_date" value="<?= date('Y-m-d') ?>" required></div>
                 <div class="field"><label>ব্যাচ</label><select name="batch_id"><option value="">পুরো পুকুর</option><?php foreach($batches as $b): ?><option value="<?= (int)$b['id'] ?>">B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></option><?php endforeach; ?></select></div>
-                <div class="field"><label>ধরন</label><select name="log_type"><option>চুন</option><option>লবণ</option><option>ওষুধ</option><option>পানি পরিবর্তন</option><option>রোগ/লক্ষণ</option><option>মৃত্যু</option><option>অন্যান্য</option></select></div>
+                <div class="field"><label>ধরন</label><select name="log_type"><option>চুন</option><option>লবণ</option><option>ওষুধ</option><option>পানি পরিবর্তন</option><option>রোগ</option><option>মৃত্যু</option><option>অন্যান্য</option></select></div>
                 <div class="field"><label>পরিমাণ</label><input type="number" step="0.001" name="amount"></div>
                 <div class="field"><label>একক</label><input name="unit" placeholder="kg / g / প্যাকেট"></div>
                 <div class="field"><label>খরচ (৳)</label><input type="number" step="0.01" name="cost" required></div>
-                <div class="field" style="grid-column:span 2"><label>বিস্তারিত</label><textarea name="details"></textarea></div>
-                <div class="field"><button class="btn btn-success">💊 রেকর্ড সংরক্ষণ</button></div>
+                <div class="field"><label>বিস্তারিত</label><textarea name="details"></textarea></div>
+                <button class="btn btn-success" type="submit">💾 সংরক্ষণ</button>
             </form>
         </div>
-        <div class="card">
-            <h3 style="margin-top:0">সাম্প্রতিক স্বাস্থ্য রেকর্ড</h3>
-            <div class="table-wrap" style="border:none">
-                <table class="table" style="min-width:500px">
-                    <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>ধরন</th><th>খরচ</th><th>কাজ</th></tr></thead>
-                    <tbody>
-                    <?php foreach($healthLogs as $h): ?>
-                    <tr>
-                        <td><?= e($h['log_date']) ?></td>
-                        <td><?= $h['batch_no'] ? 'B'.(int)$h['batch_no'] : 'পুকুর' ?></td>
-                        <td><?= e($h['log_type']) ?></td>
-                        <td>৳<?= number_format((float)$h['cost'],0) ?></td>
-                        <td>
-                            <form method="post" style="display:inline" onsubmit="return confirm('এই রেকর্ড মুছে ফেলবেন?')">
-                                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-                                <input type="hidden" name="action" value="delete_health">
-                                <input type="hidden" name="id" value="<?= (int)$h['id'] ?>">
-                                <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
-                            </form>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
+
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>ধরন</th><th>খরচ</th><th>কাজ</th></tr></thead>
+                <tbody>
+                <?php foreach ($healthLogs as $h): ?>
+                <tr>
+                    <td><?= e($h['log_date']) ?></td>
+                    <td><?= $h['batch_no'] ? 'B'.(int)$h['batch_no'] : 'পুকুর' ?></td>
+                    <td><?= e($h['log_type']) ?></td>
+                    <td>৳<?= number_format((float)$h['cost'],0) ?></td>
+                    <td>
+                        <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
+                            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="delete_health">
+                            <input type="hidden" name="id" value="<?= (int)$h['id'] ?>">
+                            <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </section>
 <?php endif; ?>
 
 <?php
-// ==================== EXPENSES PAGE ====================
+// ==================== খরচ ====================
 if ($page === 'expenses'):
 ?>
-<section class="section" id="expenses">
-    <div class="section-header">
-        <h2>💰 অন্যান্য খরচ ব্যবস্থাপনা</h2>
+<section>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin:20px 0">
+        <h2>💰 অন্যান্য খরচ</h2>
+        <a class="btn btn-info" href="?export=expense_logs">📥 CSV এক্সপোর্ট</a>
     </div>
-    <div class="two-col">
+
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px">
         <div class="card">
-            <h3 style="margin-top:0">নতুন খরচ রেকর্ড</h3>
-            <form method="post" class="form-grid">
+            <h3>নতুন খরচ রেকর্ড</h3>
+            <form method="post" class="form-grid" style="grid-template-columns:1fr">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="expense">
                 <div class="field"><label>তারিখ</label><input type="date" name="expense_date" value="<?= date('Y-m-d') ?>" required></div>
-                <div class="field"><label>ব্যাচ</label><select name="batch_id"><option value="">সব/সাধারণ</option><?php foreach($batches as $b): ?><option value="<?= (int)$b['id'] ?>">B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></option><?php endforeach; ?></select></div>
-                <div class="field"><label>খরচের ধরন</label><select name="expense_type"><option>শ্রমিক খরচ</option><option>যন্ত্রপাতি ক্রয়</option><option>আনুষাঙ্গিক খরচ</option><option>বিদ্যুৎ খরচ</option><option>পরিবহন খরচ</option><option>অন্যান্য</option></select></div>
+                <div class="field"><label>ব্যাচ</label><select name="batch_id"><option value="">সাধারণ</option><?php foreach($batches as $b): ?><option value="<?= (int)$b['id'] ?>">B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label>ধরন</label><select name="expense_type"><option>শ্রমিক</option><option>যন্ত্রপাতি</option><option>আনুষাঙ্গিক</option><option>বিদ্যুৎ</option><option>পরিবহন</option><option>অন্যান্য</option></select></div>
                 <div class="field"><label>পরিমাণ (৳)</label><input type="number" step="0.01" name="amount" required></div>
-                <div class="field" style="grid-column:span 2"><label>নোট</label><textarea name="notes"></textarea></div>
-                <div class="field"><button class="btn btn-success">💰 খরচ রেকর্ড</button></div>
+                <div class="field"><label>নোট</label><textarea name="notes"></textarea></div>
+                <button class="btn btn-success" type="submit">💾 সংরক্ষণ</button>
             </form>
         </div>
-        <div class="card">
-            <h3 style="margin-top:0">সাম্প্রতিক খরচ রেকর্ড</h3>
-            <div class="table-wrap" style="border:none">
-                <table class="table" style="min-width:500px">
-                    <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>ধরন</th><th>পরিমাণ</th><th>কাজ</th></tr></thead>
-                    <tbody>
-                    <?php foreach($expenseLogs as $exp): ?>
-                    <tr>
-                        <td><?= e($exp['expense_date']) ?></td>
-                        <td><?= $exp['batch_no'] ? 'B'.(int)$exp['batch_no'] : 'সাধারণ' ?></td>
-                        <td><?= e($exp['expense_type']) ?></td>
-                        <td>৳<?= number_format((float)$exp['amount'],0) ?></td>
-                        <td>
-                            <form method="post" style="display:inline" onsubmit="return confirm('এই রেকর্ড মুছে ফেলবেন?')">
-                                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-                                <input type="hidden" name="action" value="delete_expense">
-                                <input type="hidden" name="id" value="<?= (int)$exp['id'] ?>">
-                                <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
-                            </form>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
+
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>তারিখ</th><th>ব্যাচ</th><th>ধরন</th><th>পরিমাণ</th><th>কাজ</th></tr></thead>
+                <tbody>
+                <?php foreach ($expenseLogs as $exp): ?>
+                <tr>
+                    <td><?= e($exp['expense_date']) ?></td>
+                    <td><?= $exp['batch_no'] ? 'B'.(int)$exp['batch_no'] : 'সাধারণ' ?></td>
+                    <td><?= e($exp['expense_type']) ?></td>
+                    <td>৳<?= number_format((float)$exp['amount'],0) ?></td>
+                    <td>
+                        <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
+                            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="delete_expense">
+                            <input type="hidden" name="id" value="<?= (int)$exp['id'] ?>">
+                            <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </section>
 <?php endif; ?>
 
 <?php
-// ==================== ACCOUNTING PAGE ====================
+// ==================== অ্যাকাউন্টিং ====================
 if ($page === 'accounting'):
 ?>
-<section class="section" id="accounting">
-    <div class="section-header">
-        <h2>📊 সম্পূর্ণ হিসাবনিকাশ</h2>
-        <span class="live-badge"><span class="live-dot"></span> লাইভ হিসাব</span>
-    </div>
-
-    <div class="three-col">
-        <div class="card">
-            <h3 style="margin-top:0">আনুমানিক বাজার মূল্য</h3>
-            <div class="kpi-value" style="color:var(--primary)">৳<?= number_format($estimatedMarketValue,0) ?></div>
-            <p class="muted">বর্তমান ওজন: <?= number_format($dashboardCurrentWeight,2) ?> kg × ৳<?= number_format($marketPricePerKg,0) ?>/kg</p>
-        </div>
-        <div class="card">
-            <h3 style="margin-top:0">মোট খরচ</h3>
-            <div class="kpi-value" style="color:var(--danger)">৳<?= number_format($totalAllExpenses,0) ?></div>
-            <p class="muted">সকল খরচের সমষ্টি</p>
-        </div>
-        <div class="pl-card <?= $estimatedProfit < 0 ? 'loss' : '' ?>">
-            <h3 style="margin:0"><?= $estimatedProfit >= 0 ? 'লাভ' : 'ক্ষতি' ?></h3>
-            <div class="pl-value">৳<?= number_format(abs($estimatedProfit),0) ?></div>
-            <p><?= number_format($profitPercent,1) ?>% <?= $estimatedProfit >= 0 ? 'লাভ' : 'ক্ষতি' ?></p>
+<section>
+    <h2>📊 সম্পূর্ণ হিসাবনিকাশ</h2>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin:20px 0">
+        <div class="card"><h3>আনুমানিক বাজার মূল্য</h3><div class="kpi-value" style="color:var(--primary)">৳<?= number_format($estimatedMarketValue,0) ?></div></div>
+        <div class="card"><h3>মোট খরচ</h3><div class="kpi-value" style="color:var(--danger)">৳<?= number_format($totalAllExpenses,0) ?></div></div>
+        <div class="card" style="background:<?= $estimatedProfit >= 0 ? '#10b981' : '#ef4444' ?>;color:#fff">
+            <h3 style="color:#fff"><?= $estimatedProfit >= 0 ? 'লাভ' : 'ক্ষতি' ?></h3>
+            <div style="font-size:32px;font-weight:800">৳<?= number_format(abs($estimatedProfit),0) ?></div>
+            <div><?= number_format($profitPercent,1) ?>%</div>
         </div>
     </div>
 
-    <div class="section-header" style="margin-top:30px">
-        <h2>খরচের বিবরণ</h2>
-    </div>
-    <div class="table-wrap">
-        <table class="table">
-            <thead><tr><th>খরচের ধরন</th><th>পরিমাণ</th><th>মোট খরচের %</th></tr></thead>
-            <tbody>
-                <tr>
-                    <td><strong>মাছের ক্রয় মূল্য</strong></td>
-                    <td>৳<?= number_format($totalInitialCost,0) ?></td>
-                    <td><?= $totalAllExpenses > 0 ? number_format(($totalInitialCost/$totalAllExpenses)*100,1) : 0 ?>%</td>
-                </tr>
-                <tr>
-                    <td><strong>খাদ্যের খরচ</strong></td>
-                    <td>৳<?= number_format($totalFeedCost,0) ?></td>
-                    <td><?= $totalAllExpenses > 0 ? number_format(($totalFeedCost/$totalAllExpenses)*100,1) : 0 ?>%</td>
-                </tr>
-                <tr>
-                    <td><strong>চিকিৎসা খরচ</strong></td>
-                    <td>৳<?= number_format($totalHealthCost,0) ?></td>
-                    <td><?= $totalAllExpenses > 0 ? number_format(($totalHealthCost/$totalAllExpenses)*100,1) : 0 ?>%</td>
-                </tr>
-                <tr>
-                    <td><strong>শ্রমিক/যন্ত্রপাতি/আনুষাঙ্গিক খরচ</strong></td>
-                    <td>৳<?= number_format($totalExpenses,0) ?></td>
-                    <td><?= $totalAllExpenses > 0 ? number_format(($totalExpenses/$totalAllExpenses)*100,1) : 0 ?>%</td>
-                </tr>
-                <tr style="background:#f8fafc;font-weight:800">
-                    <td><strong>সর্বমোট খরচ</strong></td>
-                    <td><strong>৳<?= number_format($totalAllExpenses,0) ?></strong></td>
-                    <td>100%</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div class="section-header" style="margin-top:30px">
-        <h2>ব্যাচভিত্তিক হিসাব</h2>
-    </div>
-    <div class="table-wrap">
-        <table class="table">
-            <thead><tr><th>ব্যাচ</th><th>ক্রয় মূল্য</th><th>খাদ্য খরচ</th><th>চিকিৎসা খরচ</th><th>অন্যান্য খরচ</th><th>মোট খরচ</th><th>বর্তমান ওজন</th><th>বাজার মূল্য</th><th>লাভ/ক্ষতি</th></tr></thead>
-            <tbody>
-            <?php foreach ($batches as $b): 
-                $batchFeedCost = (float)$pdo->query("SELECT COALESCE(SUM(feed_cost),0) FROM feed_logs WHERE batch_id=".(int)$b['id'])->fetchColumn();
-                $batchHealthCost = (float)$pdo->query("SELECT COALESCE(SUM(cost),0) FROM health_logs WHERE batch_id=".(int)$b['id'])->fetchColumn();
-                $batchExpenseCost = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM expense_logs WHERE batch_id=".(int)$b['id'])->fetchColumn();
-                $batchTotalCost = (float)$b['initial_cost'] + $batchFeedCost + $batchHealthCost + $batchExpenseCost;
-                $batchMarketValue = (float)$b['current_weight'] * $marketPricePerKg;
-                $batchProfit = $batchMarketValue - $batchTotalCost;
-            ?>
-            <tr>
-                <td><span class="badge badge-blue">B<?= (int)$b['batch_no'] ?></span> <?= e($b['fish_name']) ?></td>
-                <td>৳<?= number_format((float)$b['initial_cost'],0) ?></td>
-                <td>৳<?= number_format($batchFeedCost,0) ?></td>
-                <td>৳<?= number_format($batchHealthCost,0) ?></td>
-                <td>৳<?= number_format($batchExpenseCost,0) ?></td>
-                <td><strong>৳<?= number_format($batchTotalCost,0) ?></strong></td>
-                <td><?= number_format((float)$b['current_weight'],2) ?> kg</td>
-                <td>৳<?= number_format($batchMarketValue,0) ?></td>
-                <td><span class="badge <?= $batchProfit >= 0 ? 'badge-green' : 'badge-red' ?>">৳<?= number_format($batchProfit,0) ?></span></td>
-            </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
+    <div class="card">
+        <h3>খরচের বিবরণ</h3>
+        <div class="table-wrap" style="border:none">
+            <table class="table">
+                <thead><tr><th>খরচের ধরন</th><th>পরিমাণ</th><th>শতাংশ</th></tr></thead>
+                <tbody>
+                    <tr><td>মাছের ক্রয় মূল্য</td><td>৳<?= number_format($totalInitialCost,0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalInitialCost/$totalAllExpenses)*100,1) : 0 ?>%</td></tr>
+                    <tr><td>খাদ্যের খরচ</td><td>৳<?= number_format($totalFeedCost,0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalFeedCost/$totalAllExpenses)*100,1) : 0 ?>%</td></tr>
+                    <tr><td>স্বাস্থ্য খরচ</td><td>৳<?= number_format($totalHealthCost,0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalHealthCost/$totalAllExpenses)*100,1) : 0 ?>%</td></tr>
+                    <tr><td>অন্যান্য খরচ</td><td>৳<?= number_format($totalExpenses,0) ?></td><td><?= $totalAllExpenses > 0 ? number_format(($totalExpenses/$totalAllExpenses)*100,1) : 0 ?>%</td></tr>
+                    <tr style="font-weight:800;background:var(--bg)"><td>সর্বমোট</td><td>৳<?= number_format($totalAllExpenses,0) ?></td><td>100%</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 <?php endif; ?>
 
 <?php
-// ==================== ANALYTICS PAGE ====================
+// ==================== অ্যানালিটিক্স ====================
 if ($page === 'analytics'):
 ?>
-<section class="section" id="analytics">
-    <div class="section-header">
-        <h2>📊 লাইভ এনালাইসিস</h2>
-        <span class="live-badge"><span class="live-dot"></span> রিয়েল-টাইম ডেটা</span>
-    </div>
-    <div class="two-col">
+<section>
+    <h2>📈 লাইভ এনালাইসিস</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0">
         <div class="card">
-            <h3 style="margin-top:0">ব্যাচভিত্তিক Growth Rate</h3>
+            <h3>ব্যাচভিত্তিক Growth Rate</h3>
             <?php foreach ($batches as $b): 
                 $lastSnap = latest_snapshot((int)$b['id']);
                 $growthPercent = $lastSnap ? (float)$lastSnap['growth_percent'] : 0;
             ?>
             <div style="margin:12px 0">
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-                    <span>B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></span>
-                    <strong><?= number_format($growthPercent,1) ?>%</strong>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width:<?= min(100,max(0,$growthPercent)) ?>%;background:linear-gradient(90deg,#14b8a6,#0f766e)"></div>
+                <div style="display:flex;justify-content:space-between"><span>B<?= (int)$b['batch_no'] ?> — <?= e($b['fish_name']) ?></span><strong><?= number_format($growthPercent,1) ?>%</strong></div>
+                <div style="width:100%;height:8px;background:var(--line);border-radius:999px;overflow:hidden;margin-top:4px">
+                    <div style="height:100%;width:<?= min(100,max(0,$growthPercent)) ?>%;background:linear-gradient(90deg,#14b8a6,#0f766e);border-radius:999px"></div>
                 </div>
             </div>
             <?php endforeach; ?>
         </div>
         <div class="card">
-            <h3 style="margin-top:0">প্রকল্প সারাংশ</h3>
+            <h3>প্রকল্প সারাংশ</h3>
             <p><strong>পানির গভীরতা:</strong> <?= e($settings['pond_depth']) ?></p>
-            <p><strong>মোট বর্তমান Biomass:</strong> <?= number_format($dashboardCurrentWeight,2) ?> kg</p>
-            <p><strong>মোট জীবিত মাছ:</strong> <?= number_format($totalCount) ?> টি</p>
+            <p><strong>মোট ওজন:</strong> <?= number_format($dashboardCurrentWeight,2) ?> kg</p>
+            <p><strong>মোট মাছ:</strong> <?= number_format($totalCount) ?> টি</p>
             <p><strong>মোট ব্যাচ:</strong> <?= count($batches) ?> টি</p>
-            <p><strong>সর্বশেষ আপডেট:</strong> <?= e($settings['last_midnight_update'] ?: 'এখনো হয়নি') ?></p>
+            <p><strong>শেষ আপডেট:</strong> <?= e($settings['last_midnight_update'] ?: 'এখনো হয়নি') ?></p>
             <p><strong>পরবর্তী আপডেট:</strong> আজ রাত ১২:০০ টায়</p>
+            <a class="btn btn-info" href="?page=batches&export=batches">📥 ডেটা এক্সপোর্ট</a>
         </div>
     </div>
 </section>
 <?php endif; ?>
 
 <?php
-// ==================== SETTINGS PAGE ====================
+// ==================== ইউজার ====================
+if ($page === 'users' && is_admin()):
+?>
+<section>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin:20px 0">
+        <h2>👥 ইউজার ব্যবস্থাপনা</h2>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px">
+        <div class="card">
+            <h3>নতুন ইউজার</h3>
+            <form method="post" class="form-grid" style="grid-template-columns:1fr">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="create_user">
+                <div class="field"><label>ইউজারনেম</label><input name="username" required></div>
+                <div class="field"><label>PIN</label><input type="password" name="password" required></div>
+                <div class="field"><label>রোল</label><select name="role"><option value="admin">অ্যাডমিন</option><option value="viewer" selected>ভিউয়ার</option></select></div>
+                <div class="field"><label>ইমেইল</label><input type="email" name="email"></div>
+                <button class="btn btn-success" type="submit">👤 ইউজার তৈরি</button>
+            </form>
+        </div>
+
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>ইউজারনেম</th><th>রোল</th><th>ইমেইল</th><th>তৈরি</th></tr></thead>
+                <tbody>
+                <?php foreach ($users as $u): ?>
+                <tr>
+                    <td><strong><?= e($u['username']) ?></strong></td>
+                    <td><span class="badge <?= $u['role'] === 'admin' ? 'badge-green' : 'badge-blue' ?>"><?= e($u['role']) ?></span></td>
+                    <td><?= e($u['email'] ?: '-') ?></td>
+                    <td><?= e(date('d/m/Y', strtotime($u['created_at']))) ?></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+<?php endif; ?>
+
+<?php
+// ==================== সেটিংস ====================
 if ($page === 'settings'):
 ?>
-<section class="section" id="settings">
-    <div class="section-header">
-        <h2>⚙️ প্রকল্প সেটিংস</h2>
-    </div>
+<section>
+    <h2>⚙️ প্রকল্প সেটিংস</h2>
     <div class="card">
-        <form method="post" class="form-grid">
+        <form method="post" class="form-grid" style="grid-template-columns:1fr 1fr">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="save_settings">
             <div class="field" style="grid-column:span 2"><label>প্রকল্পের নাম</label><input name="project_name" value="<?= e($settings['project_name']) ?>" required></div>
             <div class="field"><label>পানির গভীরতা</label><input name="pond_depth" value="<?= e($settings['pond_depth']) ?>"></div>
-            <div class="field"><label>মোট Current Live Weight (kg)</label><input type="number" step="0.01" name="total_current_weight" value="<?= e((string)$settings['total_current_weight']) ?>"></div>
+            <div class="field"><label>মোট ওজন (kg)</label><input type="number" step="0.01" name="total_current_weight" value="<?= e((string)$settings['total_current_weight']) ?>"></div>
             <div class="field"><label>বাজার মূল্য (৳/kg)</label><input type="number" step="0.01" name="market_price_per_kg" value="<?= e((string)$settings['market_price_per_kg']) ?>" required></div>
-            <div class="field" style="grid-column:span 2"><label>প্রকল্প নোট</label><textarea name="notes"><?= e($settings['notes']) ?></textarea></div>
-            <div class="field"><button class="btn btn-success">💾 সেটিংস আপডেট</button></div>
+            <div class="field" style="grid-column:span 2"><label>নোট</label><textarea name="notes"><?= e($settings['notes']) ?></textarea></div>
+            
+            <div class="field">
+                <label>📧 ইমেইল নোটিফিকেশন</label>
+                <label style="display:flex;align-items:center;gap:8px;font-weight:400">
+                    <input type="checkbox" name="email_notifications" <?= $settings['email_notifications'] ? 'checked' : '' ?>>
+                    সক্রিয় করুন
+                </label>
+            </div>
+            <div class="field"><label>ইমেইল ঠিকানা</label><input type="email" name="notification_email" value="<?= e($settings['notification_email'] ?? '') ?>" placeholder="your@email.com"></div>
+            
+            <div class="field" style="grid-column:span 2;display:flex;gap:12px;flex-wrap:wrap">
+                <button class="btn btn-success" type="submit">💾 সংরক্ষণ</button>
+                <a class="btn" href="?action=toggle_dark_mode"><?= $dark_mode ? '☀️ লাইট মোড' : '🌙 ডার্ক মোড' ?></a>
+                <button class="btn btn-info" type="button" onclick="if(confirm('ব্যাকআপ তৈরি করবেন?')){location='?action=backup'}">💾 ব্যাকআপ</button>
+            </div>
         </form>
     </div>
 </section>
 <?php endif; ?>
 
-<!-- Footer -->
-<footer class="footer">
-    <?= e(APP_NAME) ?> · Version <?= e(APP_VERSION) ?> · Secure Session · CSRF · SQLite PDO · 7-Day Growth Engine · Midnight Auto-Update · Complete Accounting
+<!-- ফুটার -->
+<footer style="padding:40px 0;text-align:center;color:var(--muted);border-top:1px solid var(--line);margin-top:40px">
+    <?= e(APP_NAME) ?> v<?= e(APP_VERSION) ?> · 🔒 নিরাপদ · 📊 রিয়েল-টাইম · 🌙 ডার্ক মোড · 📱 PWA রেডি
 </footer>
 
 </main>
 
-<!-- Mobile Bottom Navigation -->
+<!-- মোবাইল নেভিগেশন -->
 <nav class="mobile-nav">
     <div class="mobile-nav-inner">
-        <a href="?page=dashboard" class="mobile-nav-item <?= $page === 'dashboard' ? 'active' : '' ?>">
-            <span class="nav-icon">🏠</span>
-            <span>হোম</span>
-        </a>
-        <a href="?page=batches" class="mobile-nav-item <?= $page === 'batches' ? 'active' : '' ?>">
-            <span class="nav-icon">🐟</span>
-            <span>ব্যাচ</span>
-        </a>
-        <a href="?page=growth" class="mobile-nav-item <?= $page === 'growth' ? 'active' : '' ?>">
-            <span class="nav-icon">📈</span>
-            <span>Growth</span>
-        </a>
-        <a href="?page=feed" class="mobile-nav-item <?= $page === 'feed' ? 'active' : '' ?>">
-            <span class="nav-icon">🍚</span>
-            <span>খাদ্য</span>
-        </a>
-        <a href="?page=health" class="mobile-nav-item <?= $page === 'health' ? 'active' : '' ?>">
-            <span class="nav-icon">💊</span>
-            <span>স্বাস্থ্য</span>
-        </a>
-        <a href="?page=accounting" class="mobile-nav-item <?= $page === 'accounting' ? 'active' : '' ?>">
-            <span class="nav-icon">💰</span>
-            <span>হিসাব</span>
-        </a>
-        <a href="?page=analytics" class="mobile-nav-item <?= $page === 'analytics' ? 'active' : '' ?>">
-            <span class="nav-icon">📊</span>
-            <span>এনালাইসিস</span>
-        </a>
+        <a href="?page=dashboard" class="mobile-nav-item <?= $page === 'dashboard' ? 'active' : '' ?>"><span class="nav-icon">🏠</span><span>হোম</span></a>
+        <a href="?page=batches" class="mobile-nav-item <?= $page === 'batches' ? 'active' : '' ?>"><span class="nav-icon">🐟</span><span>ব্যাচ</span></a>
+        <a href="?page=growth" class="mobile-nav-item <?= $page === 'growth' ? 'active' : '' ?>"><span class="nav-icon">📈</span><span>Growth</span></a>
+        <a href="?page=feed" class="mobile-nav-item <?= $page === 'feed' ? 'active' : '' ?>"><span class="nav-icon">🍚</span><span>খাদ্য</span></a>
+        <a href="?page=accounting" class="mobile-nav-item <?= $page === 'accounting' ? 'active' : '' ?>"><span class="nav-icon">💰</span><span>হিসাব</span></a>
+        <a href="?page=settings" class="mobile-nav-item <?= $page === 'settings' ? 'active' : '' ?>"><span class="nav-icon">⚙️</span><span>সেটিংস</span></a>
     </div>
 </nav>
 
 <script>
-// Disable zoom on all devices
-document.addEventListener('gesturestart', function(e) {
+// ডার্ক মোড টগল
+document.querySelector('[href*="toggle_dark_mode"]')?.addEventListener('click', function(e) {
     e.preventDefault();
+    fetch('?action=toggle_dark_mode', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(() => location.reload());
 });
 
-document.addEventListener('gesturechange', function(e) {
-    e.preventDefault();
+// সার্চ
+function searchBatches() {
+    const search = document.getElementById('searchInput').value;
+    const url = new URL(window.location);
+    url.searchParams.set('search', search);
+    url.searchParams.set('page', 'batches');
+    window.location = url;
+}
+
+function filterBatches() {
+    const status = document.getElementById('statusFilter').value;
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+    const url = new URL(window.location);
+    if (status) url.searchParams.set('batch_filter', status);
+    else url.searchParams.delete('batch_filter');
+    if (dateFrom) url.searchParams.set('date_from', dateFrom);
+    else url.searchParams.delete('date_from');
+    if (dateTo) url.searchParams.set('date_to', dateTo);
+    else url.searchParams.delete('date_to');
+    url.searchParams.set('page', 'batches');
+    window.location = url;
+}
+
+// জুম ডিজেবল
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('gesturechange', e => e.preventDefault());
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0'].includes(e.key)) e.preventDefault();
 });
 
-document.addEventListener('gestureend', function(e) {
-    e.preventDefault();
-});
+// অটো-রিফ্রেশ (প্রতি ৬০ সেকেন্ড)
+if (window.location.pathname.includes('dashboard')) {
+    setTimeout(() => location.reload(), 60000);
+}
 
-document.addEventListener('touchmove', function(e) {
-    if (e.touches.length > 1) {
-        e.preventDefault();
-    }
-}, { passive: false });
+// PWA Service Worker
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('✅ SW registered'))
+        .catch(() => console.log('SW registration failed'));
+}
 
-document.addEventListener('dblclick', function(e) {
-    e.preventDefault();
-}, { passive: false });
-
-// Disable keyboard zoom shortcuts
-document.addEventListener('keydown', function(e) {
-    if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
-        e.preventDefault();
-    }
-});
-
-// Auto-refresh dashboard every 60 seconds for live updates
-setTimeout(function() {
-    window.location.reload();
-}, 60000);
-
-// Smooth scroll for anchor links
-document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-    anchor.addEventListener('click', function (e) {
-        e.preventDefault();
-        const target = document.querySelector(this.getAttribute('href'));
-        if (target) {
-            target.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start'
-            });
-        }
-    });
-});
+// কনসোল মেসেজ
+console.log('🐟 ' + '<?= e(APP_NAME) ?> v<?= e(APP_VERSION) ?>');
+console.log('🔒 নিরাপদ সেশন · CSRF · SQLite');
+console.log('📊 রিয়েল-টাইম ড্যাশবোর্ড');
+console.log('🌙 ডার্ক মোড সাপোর্টেড');
+console.log('📱 PWA রেডি');
 </script>
 
 </body>
