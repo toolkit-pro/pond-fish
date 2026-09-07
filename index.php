@@ -1,22 +1,23 @@
 <?php
 /**
- * POND FISH PROJECT DASHBOARD — ULTIMATE PROFESSIONAL EDITION v7.2
- * সম্পূর্ণ মোবাইল-ফ্রেন্ডলি অপটিমাইজেশন ডিজাইন
+ * POND FISH PROJECT DASHBOARD — ULTIMATE PROFESSIONAL EDITION v7.3
+ * সম্পূর্ণ ওয়েবসাইট আপডেট - মোবাইল-ফ্রেন্ডলি অপটিমাইজেশন সহ
  * 
- * নতুন আপডেট:
+ * বিশেষ বৈশিষ্ট্য:
  * - সম্পূর্ণ মোবাইল-ফার্স্ট ডিজাইন
+ * - থাম্ব-ফ্রেন্ডলি ইন্টারফেস
+ * - PWA সাপোর্ট (অফলাইন কাজ করে)
+ * - ডার্ক/লাইট মোড
+ * - অ্যানিমেটেড ট্রানজিশন
  * - টাচ অপটিমাইজেশন
- * - থাম্ব-ফ্রেন্ডলি বাটন
- * - স্মুথ স্ক্রোলিং
- * - অফলাইন সাপোর্ট
- * - PWA রেডি
+ * - ৩০ শতাংশ পুকুরের ডেটা ইন্টিগ্রেটেড
  */
 
 declare(strict_types=1);
 
 // ==================== কনফিগারেশন ====================
 const APP_NAME = 'পুকুর মাছ চাষ প্রকল্প';
-const APP_VERSION = '7.2.0';
+const APP_VERSION = '7.3.0';
 const DEFAULT_PIN = '3894';
 const SESSION_TIMEOUT = 7200;
 const DB_DIR = __DIR__ . DIRECTORY_SEPARATOR . 'data';
@@ -1023,6 +1024,7 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch
     --radius: 16px;
     --radius-sm: 10px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 [data-theme="dark"] {
@@ -1042,14 +1044,16 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans Benga
 input,textarea,select,button{font-family:inherit;font-size:16px;-webkit-appearance:none;appearance:none}
 input[type="number"]{-moz-appearance:textfield}
 input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none}
+a{text-decoration:none;color:inherit}
 
 /* ==================== Container ==================== */
 .wrap{width:100%;max-width:1400px;margin:0 auto;padding:0 12px}
 
 /* ==================== Top Navigation ==================== */
-.top-nav{position:sticky;top:0;z-index:100;background:var(--card);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--line);padding:0 12px}
+.top-nav{position:sticky;top:0;z-index:100;background:var(--card);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--line);padding:0 12px;transition:background var(--transition)}
 .nav-inner{min-height:60px;display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:1400px;margin:0 auto}
-.brand{font-weight:800;font-size:18px;color:var(--primary);display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden}
+.brand{font-weight:800;font-size:18px;color:var(--primary);display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden;cursor:pointer;transition:opacity var(--transition)}
+.brand:active{opacity:0.7}
 .brand-icon{width:36px;height:36px;min-width:36px;border-radius:10px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px}
 .brand span{overflow:hidden;text-overflow:ellipsis}
 .nav-actions{display:flex;gap:6px;align-items:center}
@@ -1058,20 +1062,23 @@ input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-ou
 .nav-actions .btn-logout:active{transform:scale(0.95)}
 
 /* ==================== Bottom Navigation (Mobile) ==================== */
-.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);z-index:1000;padding:6px 0 calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 20px rgba(0,0,0,0.05)}
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);z-index:1000;padding:6px 0 calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 20px rgba(0,0,0,0.05);transition:background var(--transition)}
 .mobile-nav-inner{display:flex;justify-content:space-around;align-items:center;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:2px;padding:0 4px}
-.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;text-decoration:none;color:var(--muted);font-size:9px;font-weight:600;padding:4px 6px;border-radius:8px;transition:all 0.2s;min-width:44px;touch-action:manipulation}
+.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;text-decoration:none;color:var(--muted);font-size:9px;font-weight:600;padding:4px 6px;border-radius:8px;transition:all 0.2s;min-width:44px;touch-action:manipulation;position:relative}
 .mobile-nav-item:active{transform:scale(0.92)}
 .mobile-nav-item.active{color:var(--primary)}
+.mobile-nav-item.active::after{content:'';position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:20px;height:3px;background:var(--primary);border-radius:999px}
 .mobile-nav-item .nav-icon{font-size:20px;line-height:1}
 .mobile-nav-item span{line-height:1.2}
 
 /* ==================== Cards ==================== */
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;transition:all 0.3s}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;transition:all var(--transition)}
 .card:active{transform:scale(0.99)}
-.kpi-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;transition:all 0.3s;cursor:pointer;touch-action:manipulation}
+.kpi-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;transition:all var(--transition);cursor:pointer;touch-action:manipulation;position:relative;overflow:hidden}
 .kpi-card:active{transform:scale(0.97);box-shadow:var(--shadow-lg)}
-.kpi-value{font-size:24px;font-weight:800;line-height:1.2}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--primary),var(--accent));opacity:0;transition:opacity var(--transition)}
+.kpi-card:hover::before{opacity:1}
+.kpi-value{font-size:24px;font-weight:800;line-height:1.2;transition:color var(--transition)}
 .kpi-label{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:4px}
 
 /* ==================== KPI Grid ==================== */
@@ -1091,12 +1098,14 @@ input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-ou
 .btn-block{width:100%;justify-content:center}
 
 /* ==================== Table ==================== */
-.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--line);background:var(--card);-webkit-overflow-scrolling:touch}
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--line);background:var(--card);-webkit-overflow-scrolling:touch;transition:background var(--transition)}
 .table{width:100%;border-collapse:collapse;min-width:600px;font-size:13px}
-.table th,.table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.table th,.table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;transition:border-color var(--transition)}
 .table th{background:var(--bg);font-weight:700;font-size:11px;text-transform:uppercase;color:var(--muted);position:sticky;top:0;z-index:5}
 .table tr:last-child td{border-bottom:none}
 .table .action-btns{display:flex;gap:4px;flex-wrap:wrap}
+.table tbody tr{transition:background var(--transition)}
+.table tbody tr:hover{background:var(--bg)}
 
 /* ==================== Badges ==================== */
 .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
@@ -1109,42 +1118,48 @@ input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-ou
 
 /* ==================== Forms ==================== */
 .form-grid{display:grid;grid-template-columns:1fr;gap:12px}
-.field label{display:block;font-size:13px;font-weight:700;margin-bottom:4px;color:var(--muted)}
-.field input,.field select,.field textarea{width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);font:inherit;transition:border-color 0.3s;font-size:16px}
+.field label{display:block;font-size:13px;font-weight:700;margin-bottom:4px;color:var(--muted);transition:color var(--transition)}
+.field input,.field select,.field textarea{width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);font:inherit;transition:all var(--transition);font-size:16px}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 4px rgba(15,118,110,0.1)}
 .field textarea{min-height:80px;resize:vertical}
 
 /* ==================== Search Bar ==================== */
 .search-bar{display:flex;flex-direction:column;gap:8px;margin:12px 0}
 .search-bar .search-row{display:flex;gap:8px;flex-wrap:wrap}
-.search-bar input,.search-bar select{flex:1;min-width:120px;padding:10px 14px;border:2px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);font:inherit;font-size:14px}
+.search-bar input,.search-bar select{flex:1;min-width:120px;padding:10px 14px;border:2px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);font:inherit;font-size:14px;transition:all var(--transition)}
+.search-bar input:focus,.search-bar select:focus{outline:none;border-color:var(--primary)}
 
 /* ==================== Charts ==================== */
-.chart-container{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:12px 0}
-.chart-container h3{font-size:15px;margin-bottom:12px}
+.chart-container{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:12px 0;transition:all var(--transition)}
+.chart-container h3{font-size:15px;margin-bottom:12px;color:var(--ink)}
 .chart-grid{display:grid;grid-template-columns:1fr;gap:12px}
 
 /* ==================== Pond Info ==================== */
-.pond-info{background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;border-radius:var(--radius);padding:16px;margin:12px 0}
+.pond-info{background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;border-radius:var(--radius);padding:16px;margin:12px 0;animation:slideDown 0.5s ease}
+@keyframes slideDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
 .pond-info h3{color:#fff;font-size:16px;margin-bottom:10px}
 .pond-info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.pond-info-item{background:rgba(255,255,255,0.12);border-radius:var(--radius-sm);padding:10px;text-align:center}
+.pond-info-item{background:rgba(255,255,255,0.12);border-radius:var(--radius-sm);padding:10px;text-align:center;transition:background var(--transition)}
+.pond-info-item:active{background:rgba(255,255,255,0.2)}
 .pond-info-item .label{font-size:10px;opacity:0.8;text-transform:uppercase;letter-spacing:0.5px}
 .pond-info-item .value{font-size:16px;font-weight:700}
 
 /* ==================== Notices ==================== */
-.notice{padding:12px 16px;border-radius:var(--radius-sm);background:#ecfdf5;color:#065f46;margin:12px 0;font-weight:600;border-left:4px solid #10b981;font-size:14px}
+.notice{padding:12px 16px;border-radius:var(--radius-sm);margin:12px 0;font-weight:600;font-size:14px;animation:slideIn 0.3s ease}
+@keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+.notice-success{background:#ecfdf5;color:#065f46;border-left:4px solid #10b981}
 .notice-error{background:#fef2f2;color:#991b1b;border-left-color:#ef4444}
+.notice-info{background:#eff6ff;color:#1e40af;border-left-color:#3b82f6}
 
 /* ==================== Pagination ==================== */
 .pagination{display:flex;gap:4px;justify-content:center;margin:16px 0;flex-wrap:wrap}
-.pagination a,.pagination span{padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--line);text-decoration:none;color:var(--ink);font-size:14px;min-width:36px;text-align:center;touch-action:manipulation}
+.pagination a,.pagination span{padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--line);text-decoration:none;color:var(--ink);font-size:14px;min-width:36px;text-align:center;touch-action:manipulation;transition:all var(--transition)}
 .pagination a:active{transform:scale(0.92)}
 .pagination .active{background:var(--primary);color:#fff;border-color:var(--primary)}
 .pagination a:hover{background:var(--line)}
 
 /* ==================== Footer ==================== */
-.footer{padding:24px 0;text-align:center;color:var(--muted);border-top:1px solid var(--line);margin-top:24px;font-size:12px}
+.footer{padding:24px 0;text-align:center;color:var(--muted);border-top:1px solid var(--line);margin-top:24px;font-size:12px;transition:all var(--transition)}
 
 /* ==================== Grid Layouts ==================== */
 .two-col{display:grid;grid-template-columns:1fr;gap:12px}
@@ -1153,9 +1168,16 @@ input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-ou
 /* ==================== Touch Optimizations ==================== */
 .touchable{transition:transform 0.15s;touch-action:manipulation}
 .touchable:active{transform:scale(0.96)}
+.touchable-ripple{position:relative;overflow:hidden}
+.touchable-ripple::after{content:'';position:absolute;inset:0;background:radial-gradient(circle,var(--primary) 10%,transparent 10%);opacity:0;transform:scale(10);transition:all 0.5s}
+.touchable-ripple:active::after{opacity:0.3;transform:scale(0)}
 
 /* ==================== Pull-to-refresh prevention ==================== */
 body{overscroll-behavior-y:contain}
+
+/* ==================== Loading Skeleton ==================== */
+.skeleton{background:linear-gradient(90deg,var(--line) 25%,var(--bg) 50%,var(--line) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
 /* ==================== Responsive Breakpoints ==================== */
 @media(min-width:480px){
@@ -1206,6 +1228,8 @@ body{overscroll-behavior-y:contain}
     .mobile-nav-item .nav-icon{font-size:17px}
     .brand{font-size:13px}
     .brand-icon{width:26px;height:26px;min-width:26px;font-size:13px}
+    .table{font-size:11px;min-width:400px}
+    .table th,.table td{padding:6px 8px}
 }
 
 /* ==================== Print Styles ==================== */
@@ -1215,6 +1239,10 @@ body{overscroll-behavior-y:contain}
     .card{box-shadow:none!important;border:1px solid #ddd!important}
     .kpi-card{box-shadow:none!important;border:1px solid #ddd!important}
 }
+
+/* ==================== Dark Mode Toggle Animation ==================== */
+.theme-toggle{transition:transform 0.5s ease}
+.theme-toggle:hover{transform:rotate(20deg)}
 </style>
 </head>
 <body>
@@ -1228,19 +1256,19 @@ body{overscroll-behavior-y:contain}
         </div>
         <div class="nav-actions">
             <div class="nav-links" style="display:flex;gap:4px;align-items:center">
-                <a href="?page=dashboard" class="btn <?= $page === 'dashboard' ? 'btn-primary' : 'btn-outline' ?> btn-sm">📊</a>
-                <a href="?page=batches" class="btn <?= $page === 'batches' ? 'btn-primary' : 'btn-outline' ?> btn-sm">🐠</a>
-                <a href="?page=growth" class="btn <?= $page === 'growth' ? 'btn-primary' : 'btn-outline' ?> btn-sm">📈</a>
-                <a href="?page=feed" class="btn <?= $page === 'feed' ? 'btn-primary' : 'btn-outline' ?> btn-sm">🍚</a>
-                <a href="?page=health" class="btn <?= $page === 'health' ? 'btn-primary' : 'btn-outline' ?> btn-sm">💊</a>
-                <a href="?page=accounting" class="btn <?= $page === 'accounting' ? 'btn-primary' : 'btn-outline' ?> btn-sm">💰</a>
-                <a href="?page=analytics" class="btn <?= $page === 'analytics' ? 'btn-primary' : 'btn-outline' ?> btn-sm">📊</a>
+                <a href="?page=dashboard" class="btn <?= $page === 'dashboard' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="ড্যাশবোর্ড">📊</a>
+                <a href="?page=batches" class="btn <?= $page === 'batches' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="ব্যাচ">🐠</a>
+                <a href="?page=growth" class="btn <?= $page === 'growth' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="গ্রোথ">📈</a>
+                <a href="?page=feed" class="btn <?= $page === 'feed' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="খাদ্য">🍚</a>
+                <a href="?page=health" class="btn <?= $page === 'health' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="স্বাস্থ্য">💊</a>
+                <a href="?page=accounting" class="btn <?= $page === 'accounting' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="হিসাব">💰</a>
+                <a href="?page=analytics" class="btn <?= $page === 'analytics' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="এনালাইসিস">📊</a>
                 <?php if (is_admin()): ?>
-                <a href="?page=users" class="btn <?= $page === 'users' ? 'btn-primary' : 'btn-outline' ?> btn-sm">👥</a>
+                <a href="?page=users" class="btn <?= $page === 'users' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="ইউজার">👥</a>
                 <?php endif; ?>
-                <a href="?page=settings" class="btn <?= $page === 'settings' ? 'btn-primary' : 'btn-outline' ?> btn-sm">⚙️</a>
+                <a href="?page=settings" class="btn <?= $page === 'settings' ? 'btn-primary' : 'btn-outline' ?> btn-sm" title="সেটিংস">⚙️</a>
             </div>
-            <button class="btn-logout" onclick="if(confirm('লগআউট করবেন?')){window.location='?logout=1'}">🚪</button>
+            <button class="btn-logout" onclick="if(confirm('লগআউট করবেন?')){window.location='?logout=1'}" title="লগআউট">🚪</button>
         </div>
     </div>
 </header>
@@ -1249,10 +1277,10 @@ body{overscroll-behavior-y:contain}
 <main class="wrap">
 
 <?php if (isset($_GET['saved'])): ?>
-<div class="notice">✅ তথ্য সফলভাবে সংরক্ষণ হয়েছে।</div>
+<div class="notice notice-success">✅ তথ্য সফলভাবে সংরক্ষণ হয়েছে।</div>
 <?php endif; ?>
 <?php if (isset($_GET['deleted'])): ?>
-<div class="notice">🗑️ তথ্য মুছে ফেলা হয়েছে।</div>
+<div class="notice notice-success">🗑️ তথ্য মুছে ফেলা হয়েছে।</div>
 <?php endif; ?>
 <?php if (!empty($formError)): ?>
 <div class="notice notice-error">⚠ <?= e($formError) ?></div>
@@ -1429,8 +1457,8 @@ if ($page === 'batches'):
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">🐠 ব্যাচ</h2>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <a class="btn btn-success btn-sm" href="?page=batches&edit=new">➕</a>
-            <a class="btn btn-info btn-sm" href="?export=batches">📥</a>
+            <a class="btn btn-success btn-sm" href="?page=batches&edit=new" title="নতুন ব্যাচ">➕</a>
+            <a class="btn btn-info btn-sm" href="?export=batches" title="CSV এক্সপোর্ট">📥</a>
         </div>
     </div>
 
@@ -1468,12 +1496,12 @@ if ($page === 'batches'):
                 <td><?= number_format((float)$b['current_avg_weight'], 0) ?> g</td>
                 <td>
                     <div class="action-btns">
-                        <a class="btn btn-sm" href="?page=batches&edit=<?= (int)$b['id'] ?>">✏️</a>
+                        <a class="btn btn-sm" href="?page=batches&edit=<?= (int)$b['id'] ?>" title="সম্পাদনা">✏️</a>
                         <form method="post" style="display:inline" onsubmit="return confirm('মুছে ফেলবেন?')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_batch">
                             <input type="hidden" name="id" value="<?= (int)$b['id'] ?>">
-                            <button class="btn btn-danger btn-sm" type="submit">🗑️</button>
+                            <button class="btn btn-danger btn-sm" type="submit" title="মুছুন">🗑️</button>
                         </form>
                     </div>
                 </td>
@@ -1534,8 +1562,8 @@ if ($page === 'growth'):
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">📈 Growth</h2>
         <div style="display:flex;gap:6px">
-            <a class="btn btn-success btn-sm" href="#snapshot-form">➕</a>
-            <a class="btn btn-info btn-sm" href="?export=growth_snapshots">📥</a>
+            <a class="btn btn-success btn-sm" href="#snapshot-form" title="নতুন Snapshot">➕</a>
+            <a class="btn btn-info btn-sm" href="?export=growth_snapshots" title="CSV এক্সপোর্ট">📥</a>
         </div>
     </div>
 
@@ -1557,7 +1585,7 @@ if ($page === 'growth'):
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="action" value="delete_snapshot">
                         <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
-                        <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
+                        <button class="btn btn-danger btn-xs" type="submit" title="মুছুন">🗑️</button>
                     </form>
                 </td>
             </tr>
@@ -1593,7 +1621,7 @@ if ($page === 'feed'):
 <section>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">🍚 খাদ্য</h2>
-        <a class="btn btn-info btn-sm" href="?export=feed_logs">📥</a>
+        <a class="btn btn-info btn-sm" href="?export=feed_logs" title="CSV এক্সপোর্ট">📥</a>
     </div>
 
     <?php if ($settings['feed_recipe']): ?>
@@ -1642,7 +1670,7 @@ if ($page === 'feed'):
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_feed">
                             <input type="hidden" name="id" value="<?= (int)$f['id'] ?>">
-                            <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
+                            <button class="btn btn-danger btn-xs" type="submit" title="মুছুন">🗑️</button>
                         </form>
                     </td>
                 </tr>
@@ -1661,7 +1689,7 @@ if ($page === 'health'):
 <section>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">💊 স্বাস্থ্য</h2>
-        <a class="btn btn-info btn-sm" href="?export=health_logs">📥</a>
+        <a class="btn btn-info btn-sm" href="?export=health_logs" title="CSV এক্সপোর্ট">📥</a>
     </div>
 
     <div class="two-col">
@@ -1696,7 +1724,7 @@ if ($page === 'health'):
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_health">
                             <input type="hidden" name="id" value="<?= (int)$h['id'] ?>">
-                            <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
+                            <button class="btn btn-danger btn-xs" type="submit" title="মুছুন">🗑️</button>
                         </form>
                     </td>
                 </tr>
@@ -1715,7 +1743,7 @@ if ($page === 'expenses'):
 <section>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0">
         <h2 style="font-size:20px">💰 খরচ</h2>
-        <a class="btn btn-info btn-sm" href="?export=expense_logs">📥</a>
+        <a class="btn btn-info btn-sm" href="?export=expense_logs" title="CSV এক্সপোর্ট">📥</a>
     </div>
 
     <div class="two-col">
@@ -1748,7 +1776,7 @@ if ($page === 'expenses'):
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_expense">
                             <input type="hidden" name="id" value="<?= (int)$exp['id'] ?>">
-                            <button class="btn btn-danger btn-xs" type="submit">🗑️</button>
+                            <button class="btn btn-danger btn-xs" type="submit" title="মুছুন">🗑️</button>
                         </form>
                     </td>
                 </tr>
@@ -1895,7 +1923,7 @@ if ($page === 'settings'):
             <div class="field"><label>ইমেইল ঠিকানা</label><input type="email" name="notification_email" value="<?= e($settings['notification_email'] ?? '') ?>" placeholder="your@email.com"></div>
             <div class="field full-width" style="display:flex;gap:8px;flex-wrap:wrap">
                 <button class="btn btn-success" type="submit">💾 সংরক্ষণ</button>
-                <a class="btn" href="?action=toggle_dark_mode"><?= $dark_mode ? '☀️ লাইট' : '🌙 ডার্ক' ?></a>
+                <a class="btn theme-toggle" href="?action=toggle_dark_mode"><?= $dark_mode ? '☀️ লাইট' : '🌙 ডার্ক' ?></a>
                 <button class="btn btn-info" type="button" onclick="if(confirm('ব্যাকআপ?')){location='?action=backup'}">💾 ব্যাকআপ</button>
             </div>
         </form>
@@ -1905,7 +1933,7 @@ if ($page === 'settings'):
 
 <!-- ==================== FOOTER ==================== -->
 <footer class="footer">
-    <?= e(APP_NAME) ?> v<?= e(APP_VERSION) ?> · 🔒 নিরাপদ · 📊 রিয়েল-টাইম · 📱 মোবাইল-ফ্রেন্ডলি
+    <?= e(APP_NAME) ?> v<?= e(APP_VERSION) ?> · 🔒 নিরাপদ · 📊 রিয়েল-টাইম · 📱 মোবাইল-ফ্রেন্ডলি · 🌙 ডার্ক মোড
 </footer>
 
 </main>
@@ -1937,7 +1965,7 @@ if ($page === 'settings'):
 <!-- ==================== SCRIPTS ==================== -->
 <script>
 // ====== Dark Mode Toggle ======
-document.querySelector('[href*="toggle_dark_mode"]')?.addEventListener('click', function(e) {
+document.querySelector('.theme-toggle')?.addEventListener('click', function(e) {
     e.preventDefault();
     fetch('?action=toggle_dark_mode', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(() => location.reload());
@@ -1972,13 +2000,24 @@ function filterBatches() {
 }
 
 // ====== Touch Feedback ======
-document.querySelectorAll('.touchable, .btn, .kpi-card, .mobile-nav-item').forEach(el => {
+document.querySelectorAll('.touchable, .btn, .kpi-card, .mobile-nav-item, .pond-info-item').forEach(el => {
     el.addEventListener('touchstart', function() {
         this.style.opacity = '0.7';
     }, { passive: true });
     el.addEventListener('touchend', function() {
         this.style.opacity = '1';
     }, { passive: true });
+});
+
+// ====== Smooth Scroll for Anchor Links ======
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    });
 });
 
 // ====== Disable Zoom ======
@@ -2006,6 +2045,7 @@ console.log('🏡 ৩০ শতাংশ পুকুর | গভীরতা: �
 console.log('📊 মোট: <?= number_format($totalCount) ?> মাছ | <?= number_format($dashboardCurrentWeight, 1) ?> কেজি');
 console.log('🍚 দৈনিক খাদ্য: <?= number_format((float)$settings['feed_daily_kg'], 1) ?> কেজি');
 console.log('📱 সম্পূর্ণ মোবাইল-ফ্রেন্ডলি ডিজাইন');
+console.log('🌙 ডার্ক মোড: <?= $dark_mode ? 'অন' : 'বন্ধ' ?>');
 </script>
 
 </body>
