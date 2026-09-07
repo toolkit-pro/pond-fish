@@ -27,17 +27,6 @@
     </IfModule>
 </FilesMatch>
 
-# Protect data directory completely
-<Directory "/var/www/html/data">
-    <IfModule mod_authz_core.c>
-        Require all denied
-    </IfModule>
-    <IfModule !mod_authz_core.c>
-        Order allow,deny
-        Deny from all
-    </IfModule>
-</Directory>
-
 # Protect SQLite files
 <FilesMatch "\.(sqlite|sqlite-journal|sqlite-wal|sqlite-shm|db)$">
     <IfModule mod_authz_core.c>
@@ -51,6 +40,17 @@
 
 # Protect configuration files
 <FilesMatch "\.(env|config|ini|htaccess|htpasswd|bak|backup|old)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Protect PHP files in data directory
+<FilesMatch "^data/.*\.(php|php3|php4|php5|php7|php8|phtml|phps|pht|phar)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
@@ -133,7 +133,7 @@
 ServerTokens Prod
 ServerSignature Off
 
-# Block suspicious user agents
+# Block suspicious user agents and SQL injection
 <IfModule mod_rewrite.c>
     RewriteEngine On
     
@@ -151,6 +151,10 @@ ServerSignature Off
     
     # Block access to specific file patterns
     RewriteRule \.(sql|conf|ini|env|bak|backup)$ - [F,L]
+    
+    # Disable unnecessary HTTP methods
+    RewriteCond %{REQUEST_METHOD} ^(TRACE|TRACK|DELETE|CONNECT) [NC]
+    RewriteRule ^ - [F,L]
 </IfModule>
 
 # Enable ETags for caching
@@ -163,41 +167,6 @@ ErrorDocument 403 "অ্যাক্সেস নিষিদ্ধ - Access Fo
 ErrorDocument 404 "পৃষ্ঠা পাওয়া যায়নি - Page Not Found"
 ErrorDocument 500 "সার্ভার ত্রুটি - Internal Server Error"
 
-# Disable script execution in upload directory
-<Directory "/var/www/html/data">
-    <FilesMatch "\.(php|php3|php4|php5|php7|php8|phtml|phps|pht|phar)$">
-        <IfModule mod_authz_core.c>
-            Require all denied
-        </IfModule>
-        <IfModule !mod_authz_core.c>
-            Order allow,deny
-            Deny from all
-        </IfModule>
-    </FilesMatch>
-</Directory>
-
-# Allow .woff and .woff2 fonts
-<FilesMatch "\.(woff|woff2|ttf|eot|svg)$">
-    Header add Access-Control-Allow-Origin "*"
-</FilesMatch>
-
-# Timeout settings
-TimeOut 300
-KeepAliveTimeout 15
-
-# Connection settings
-MaxRequestWorkers 256
-StartServers 8
-MinSpareServers 5
-MaxSpareServers 20
-
-# Disable unnecessary HTTP methods
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    RewriteCond %{REQUEST_METHOD} ^(TRACE|TRACK|DELETE|CONNECT) [NC]
-    RewriteRule ^ - [F,L]
-</IfModule>
-
 # Force UTF-8 charset
 AddDefaultCharset UTF-8
 AddCharset UTF-8 .html .css .js .xml .json .php
@@ -209,3 +178,8 @@ AddType text/css .css
 AddType image/svg+xml .svg
 AddType font/woff .woff
 AddType font/woff2 .woff2
+
+# Allow .woff and .woff2 fonts from any origin
+<FilesMatch "\.(woff|woff2|ttf|eot|svg)$">
+    Header add Access-Control-Allow-Origin "*"
+</FilesMatch>
